@@ -1,35 +1,37 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { lazy } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
-import { AppLayout } from './components/layout/AppLayout';
+import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
+import { AppLayout, FocusLayout } from './components/layout/AppLayout';
+import { ProtectedRoute, GuestRoute } from './routes/ProtectedRoute';
 import { LandingPage } from './pages/LandingPage';
-import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { NotFoundPage } from './pages/NotFoundPage';
 
-import { AuthProvider } from './context/AuthContext';
-import { ProtectedRoute } from './routes/ProtectedRoute';
-import { DashboardPage } from './pages/DashboardPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { CreateInterviewPage } from './pages/CreateInterviewPage';
-import { InterviewPrepPage } from './pages/InterviewPrepPage';
-import { InterviewRoom } from './pages/InterviewRoom';
-import { InterviewResultsPage } from './pages/InterviewResultsPage';
-import { HistoryPage } from './pages/HistoryPage';
-import { AnalyticsPage } from './pages/AnalyticsPage';
+// Route-level code splitting: the computer-vision runtime and charts only load when needed.
+const LoginPage = lazy(() => import('./pages/AuthPages').then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazy(() => import('./pages/AuthPages').then((m) => ({ default: m.RegisterPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const CreateInterviewPage = lazy(() => import('./pages/CreateInterviewPage'));
+const InterviewPrepPage = lazy(() => import('./pages/InterviewPrepPage'));
+const InterviewRoom = lazy(() => import('./pages/InterviewRoom'));
+const InterviewResultsPage = lazy(() => import('./pages/InterviewResultsPage'));
 
-export const App = () => {
-  return (
-    <ThemeProvider>
+export const App = () => (
+  <ThemeProvider>
+    <ToastProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
             <Route element={<AppLayout />}>
-              {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-
-              {/* Protected Candidate Routes */}
+              <Route element={<GuestRoute />}>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+              </Route>
               <Route element={<ProtectedRoute />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
@@ -37,19 +39,20 @@ export const App = () => {
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/interviews/new" element={<CreateInterviewPage />} />
                 <Route path="/interviews/:id/prep" element={<InterviewPrepPage />} />
-                <Route path="/interviews/:id/room" element={<InterviewRoom />} />
                 <Route path="/interviews/:id/results" element={<InterviewResultsPage />} />
               </Route>
-
-              {/* 404 Routing */}
-              <Route path="/404" element={<NotFoundPage />} />
-              <Route path="*" element={<Navigate to="/404" replace />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+            <Route element={<FocusLayout />}>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/interviews/:id/room" element={<InterviewRoom />} />
+              </Route>
             </Route>
           </Routes>
         </BrowserRouter>
       </AuthProvider>
-    </ThemeProvider>
-  );
-};
+    </ToastProvider>
+  </ThemeProvider>
+);
 
 export default App;

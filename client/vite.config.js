@@ -9,20 +9,20 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:5000',
         changeOrigin: true,
-        secure: false,
       },
     },
   },
   build: {
-    chunkSizeWarningLimit: 800,
+    target: 'es2020',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-charts': ['recharts'],
-          'vendor-icons': ['lucide-react'],
+          'vendor-vision': ['@mediapipe/tasks-vision'],
         },
       },
     },

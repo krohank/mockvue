@@ -1,15 +1,17 @@
 {
   "name": "mockvue-root",
-  "version": "1.0.0",
-  "description": "MockVue — AI-Powered Mock Interview & Evaluation Platform",
+  "version": "2.0.0",
+  "description": "MockVue \u2014 mock interviews with rubric scoring and on-device computer-vision proctoring",
   "private": true,
   "scripts": {
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
-    "build:client": "npm run build --prefix client",
-    "start:server": "npm run start --prefix server"
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "test": "npm test --prefix server && npm test --prefix client",
+    "test:e2e": "npm run test:e2e --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
@@ -23,5 +25,8 @@
     "express"
   ],
   "author": "MockVue Team",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.6"
+  }
 }

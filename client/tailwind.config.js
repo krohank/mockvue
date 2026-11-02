@@ -1,101 +1,87 @@
 /** @type {import('tailwindcss').Config} */
+
+// Every color is a CSS variable (space-separated RGB channels) defined in
+// src/index.css, so light/dark themes swap in one place and opacity
+// modifiers such as `bg-accent/10` still work.
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,jsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Editorial Warm Ivory & Ink Palette
-        ivory: {
-          bg: '#F7F4EE',
-          surface: '#FFFDF9',
-          'surface-2': '#F0ECE4',
-          border: '#DED9D0',
-          'border-subtle': '#E8E3DA',
+        canvas: token('canvas'),
+        surface: {
+          DEFAULT: token('surface'),
+          2: token('surface-2'),
+          3: token('surface-3'),
+        },
+        line: {
+          DEFAULT: token('line'),
+          strong: token('line-strong'),
         },
         ink: {
-          DEFAULT: '#171717',
-          secondary: '#68645E',
-          muted: '#948F87',
-          faint: '#C2BCB3',
+          DEFAULT: token('ink'),
+          2: token('ink-2'),
+          3: token('ink-3'),
         },
-        burgundy: {
-          DEFAULT: '#7A263A',
-          hover: '#641F30',
-          subtle: '#FAF0F2',
-          border: '#E8C5CC',
-          dark: '#9E334B',
-          900: '#4D1522',
+        accent: {
+          DEFAULT: token('accent'),
+          hover: token('accent-hover'),
+          ink: token('accent-ink'),
+          soft: token('accent-soft'),
+          fg: token('accent-fg'),
         },
         brass: {
-          DEFAULT: '#C59A5B',
-          hover: '#B38747',
-          subtle: '#FBF6EE',
-          border: '#E8D5B8',
-          dark: '#D4AA6A',
+          DEFAULT: token('brass'),
+          soft: token('brass-soft'),
         },
-        sage: {
-          DEFAULT: '#3F6B52',
-          hover: '#335742',
-          subtle: '#EFF5F1',
-          border: '#C2D9CB',
-          dark: '#528568',
+        success: {
+          DEFAULT: token('success'),
+          soft: token('success-soft'),
+          fg: token('success-fg'),
         },
-        amber: {
-          DEFAULT: '#A66A24',
-          subtle: '#FBF5EC',
-          border: '#E8D5BE',
-          dark: '#BA7C2F',
+        warning: {
+          DEFAULT: token('warning'),
+          soft: token('warning-soft'),
+          fg: token('warning-fg'),
         },
-        crimson: {
-          DEFAULT: '#A33B3B',
-          hover: '#8F3232',
-          subtle: '#FAF0F0',
-          border: '#E8C4C4',
-          dark: '#BA4545',
-        },
-        // Night Study Academic Archive Theme
-        dark: {
-          bg: '#141210',
-          surface: '#1C1916',
-          elevated: '#24201C',
-          border: '#332F2A',
-          muted: '#3D3833',
+        danger: {
+          DEFAULT: token('danger'),
+          soft: token('danger-soft'),
+          fg: token('danger-fg'),
         },
       },
       fontFamily: {
         serif: ['Newsreader', 'Georgia', 'serif'],
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'],
+        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       boxShadow: {
-        'paper': '0 1px 3px 0 rgba(23, 23, 23, 0.04), 0 1px 2px -1px rgba(23, 23, 23, 0.02)',
-        'elevated': '0 4px 16px -2px rgba(23, 23, 23, 0.06)',
-        'tactile': '0 1px 2px 0 rgba(0, 0, 0, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.15)',
-        'card': '0 1px 3px 0 rgba(23, 23, 23, 0.04), 0 1px 2px -1px rgba(23, 23, 23, 0.02)',
+        card: '0 1px 2px 0 rgb(var(--shadow) / 0.05), 0 1px 3px 0 rgb(var(--shadow) / 0.04)',
+        raised: '0 8px 24px -8px rgb(var(--shadow) / 0.18), 0 2px 6px -2px rgb(var(--shadow) / 0.08)',
+        inset: 'inset 0 1px 0 0 rgb(255 255 255 / 0.12)',
       },
       borderRadius: {
-        'card': '12px',
-        'btn': '10px',
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.2s ease-out',
-        'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        xl: '0.875rem',
+        '2xl': '1.125rem',
       },
       keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        slideUp: {
-          '0%': { transform: 'translateY(6px)', opacity: '0' },
-          '100%': { transform: 'translateY(0)', opacity: '1' },
-        },
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'slide-up': { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        'slide-down': { from: { opacity: '0', transform: 'translateY(-8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        'scale-in': { from: { opacity: '0', transform: 'scale(0.97)' }, to: { opacity: '1', transform: 'scale(1)' } },
+        shimmer: { '0%': { backgroundPosition: '-400px 0' }, '100%': { backgroundPosition: '400px 0' } },
+      },
+      animation: {
+        'fade-in': 'fade-in 200ms ease-out',
+        'slide-up': 'slide-up 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-down': 'slide-down 240ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in': 'scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        shimmer: 'shimmer 1.4s linear infinite',
       },
     },
   },
   plugins: [],
-}
+};

@@ -1,222 +1,195 @@
 import React, { useState } from 'react';
-import { Save, Check, AlertCircle, User, Shield } from 'lucide-react';
+import { Save, KeyRound, ShieldCheck, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { useDocumentTitle } from '../hooks/useAsync';
 import { Button } from '../components/ui/Button';
-import { Card, CardHeader, CardBody } from '../components/ui/Card';
+import { Card, CardHeader } from '../components/ui/Card';
+import { Field, Input, PasswordInput, Select, Textarea, Chip } from '../components/ui/Field';
+import { PageContainer, PageHeader } from '../components/layout/PageHeader';
+import { TARGET_ROLES, EXPERIENCE_LEVELS, TOPICS } from '../lib/constants';
+import { local, session } from '../lib/storage';
+import api from '../services/api';
+
+const BIO_MAX = 300;
 
 export const ProfilePage = () => {
+  useDocumentTitle('Profile & settings');
   const { user, updateProfile } = useAuth();
+  const toast = useToast();
 
-  const [name, setName] = useState(user?.name || '');
-  const [targetRole, setTargetRole] = useState(user?.targetRole || 'Software Development Engineer');
-  const [experienceLevel, setExperienceLevel] = useState(user?.experienceLevel || 'Entry-Level');
-  const [preferredTopics, setPreferredTopics] = useState(
-    user?.preferredTopics || ['Data Structures & Algorithms', 'Database Management Systems']
-  );
-  const [bio, setBio] = useState(user?.bio || '');
-  const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
-  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: user?.name || '',
+    targetRole: user?.targetRole || 'Software Development Engineer',
+    experienceLevel: user?.experienceLevel || 'Entry-Level',
+    preferredTopics: user?.preferredTopics?.filter((t) => TOPICS.includes(t)) || [],
+    bio: user?.bio || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
 
-  const availableTopics = [
-    'Data Structures & Algorithms',
-    'Database Management Systems',
-    'Operating Systems',
-    'Computer Networks',
-    'System Design',
-    'Object-Oriented Programming',
-    'JavaScript & TypeScript',
-    'React & Frontend Architecture',
-    'Node.js & Backend Architecture',
-    'SQL & Data Modeling',
-    'Python Programming',
-    'Java & Spring Boot',
-  ];
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const handleTopicToggle = (topic) => {
-    if (preferredTopics.includes(topic)) {
-      if (preferredTopics.length === 1) return;
-      setPreferredTopics(preferredTopics.filter((t) => t !== topic));
-    } else {
-      setPreferredTopics([...preferredTopics, topic]);
+  const toggleTopic = (t) =>
+    setForm((f) => {
+      const has = f.preferredTopics.includes(t);
+      if (has && f.preferredTopics.length === 1) return f;
+      if (!has && f.preferredTopics.length >= 8) return f;
+      return { ...f, preferredTopics: has ? f.preferredTopics.filter((x) => x !== t) : [...f.preferredTopics, t] };
+    });
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      toast.error('Name cannot be empty.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateProfile({ ...form, name: form.name.trim(), bio: form.bio.trim() });
+      toast.success('Profile saved.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleSave = async (e) => {
+  const changePassword = async (e) => {
     e.preventDefault();
-    setStatusMessage({ type: '', text: '' });
-    setIsSaving(true);
-
+    setPwError('');
+    if (pw.newPassword.length < 8) return setPwError('New password must be at least 8 characters.');
+    if (pw.newPassword !== pw.confirm) return setPwError('New passwords don’t match.');
+    setPwSaving(true);
     try {
-      await updateProfile({
-        name,
-        targetRole,
-        experienceLevel,
-        preferredTopics,
-        bio,
-      });
-      setStatusMessage({ type: 'success', text: 'Candidate profile settings saved successfully.' });
+      await api.put('/users/password', { currentPassword: pw.currentPassword, newPassword: pw.newPassword });
+      toast.success('Password updated.');
+      setPw({ currentPassword: '', newPassword: '', confirm: '' });
     } catch (err) {
-      setStatusMessage({ type: 'error', text: err.message || 'Failed to update profile.' });
+      setPwError(err.message);
     } finally {
-      setIsSaving(false);
+      setPwSaving(false);
     }
+    return undefined;
+  };
+
+  const clearLocalData = () => {
+    for (const store of [window.localStorage, window.sessionStorage]) {
+      try {
+        Object.keys(store)
+          .filter((k) => k.startsWith('mockvue_draft_') || k.startsWith('mockvue_proctoring_') || k === 'mockvue_cv_baseline')
+          .forEach((k) => store.removeItem(k));
+      } catch {
+        /* ignore */
+      }
+    }
+    local.remove('mockvue_cv_baseline');
+    session.remove('mockvue_cv_baseline');
+    toast.success('Saved drafts and calibration data cleared from this browser.');
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in font-sans">
-      <div className="pb-5 border-b border-[#DED9D0] dark:border-[#332F2A]">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-          CANDIDATE DOSSIER
-        </span>
-        <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-          Candidate Profile & Synthesis Calibration
-        </h1>
-        <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5 font-mono">
-          CALIBRATION SETTINGS FOR QUESTION SYNTHESIS & TARGET PLACEMENT TRACKS
-        </p>
-      </div>
+    <PageContainer size="md">
+      <PageHeader eyebrow="Account" title="Profile & settings" description="Your role, level and focus topics shape the questions you get." />
 
-      {statusMessage.text && (
-        <div
-          className={`p-3.5 rounded-lg flex items-center gap-2.5 text-xs font-mono ${
-            statusMessage.type === 'success'
-              ? 'bg-[#EFF5F1] dark:bg-[#3F6B52]/20 border border-[#C2D9CB] dark:border-[#3F6B52]/40 text-[#3F6B52] dark:text-[#88BA9D]'
-              : 'bg-[#FAF0F0] dark:bg-[#A33B3B]/20 border border-[#E8C4C4] dark:border-[#A33B3B]/40 text-[#A33B3B] dark:text-[#E59797]'
-          }`}
-        >
-          {statusMessage.type === 'success' ? (
-            <Check className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{statusMessage.text}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSave} className="space-y-6">
-        <Card className="shadow-paper">
-          <CardHeader
-            title="General Identification"
-            subtitle="Academic and placement candidate profile"
-          />
-          <CardBody className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  disabled
-                  value={user?.email || ''}
-                  className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F0ECE4] dark:bg-[#24201C] text-[#68645E] dark:text-[#9E988F] text-sm cursor-not-allowed font-mono"
-                />
-              </div>
+      <form onSubmit={save}>
+        <Card>
+          <CardHeader title="Profile" description={user?.email} />
+          <div className="space-y-5">
+            <Field label="Full name" htmlFor="p-name">
+              <Input id="p-name" value={form.name} onChange={set('name')} autoComplete="name" maxLength={100} />
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Target role" htmlFor="p-role">
+                <Select id="p-role" value={form.targetRole} onChange={set('targetRole')}>
+                  {TARGET_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.value}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Experience level" htmlFor="p-level">
+                <Select id="p-level" value={form.experienceLevel} onChange={set('experienceLevel')}>
+                  {EXPERIENCE_LEVELS.map((l) => (
+                    <option key={l.value} value={l.value}>
+                      {l.label} — {l.desc}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Target Job Track
-                </label>
-                <select
-                  value={targetRole}
-                  onChange={(e) => setTargetRole(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 font-sans"
-                >
-                  <option value="Software Development Engineer">Software Development Engineer (SDE)</option>
-                  <option value="Frontend Developer">Frontend Developer</option>
-                  <option value="Backend Developer">Backend Developer</option>
-                  <option value="Full Stack Developer">Full Stack Developer</option>
-                  <option value="Data Analyst">Data Analyst</option>
-                  <option value="Java Developer">Java Developer</option>
-                  <option value="Python Developer">Python Developer</option>
-                  <option value="DevOps Engineer">DevOps Engineer</option>
-                </select>
+            <Field label="Focus topics" hint="Pre-selected when you create an interview. Up to 8.">
+              <div className="flex flex-wrap gap-2">
+                {TOPICS.map((t) => (
+                  <Chip key={t} selected={form.preferredTopics.includes(t)} onClick={() => toggleTopic(t)}>
+                    {t}
+                  </Chip>
+                ))}
               </div>
-
-              <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Experience Tier
-                </label>
-                <select
-                  value={experienceLevel}
-                  onChange={(e) => setExperienceLevel(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 font-sans"
-                >
-                  <option value="Entry-Level">Entry-Level (Campus Placements / Fresh Graduate)</option>
-                  <option value="Junior">Junior (0–2 Years Experience)</option>
-                  <option value="Mid-Level">Mid-Level (2–5 Years Experience)</option>
-                  <option value="Senior">Senior (5+ Years Experience)</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                Target Objective / Academic Bio
-              </label>
-              <textarea
-                rows="3"
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="State your placement focus, target tier-1 companies, or specific technical proficiencies..."
-                className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 leading-relaxed font-sans"
+            </Field>
+            <Field label="Goal" htmlFor="p-bio" optional hint={`${form.bio.length}/${BIO_MAX}`}>
+              <Textarea
+                id="p-bio"
+                rows={3}
+                maxLength={BIO_MAX}
+                value={form.bio}
+                onChange={set('bio')}
+                placeholder="e.g. Final-year CS student preparing for SDE-1 roles at product companies."
               />
-            </div>
-          </CardBody>
+            </Field>
+          </div>
+          <div className="mt-6 flex justify-end border-t border-line pt-5">
+            <Button type="submit" icon={Save} isLoading={saving}>
+              Save changes
+            </Button>
+          </div>
         </Card>
+      </form>
 
-        {/* Preferred Placement Topics */}
-        <Card className="shadow-paper">
-          <CardHeader
-            title="Interview Syllabus Focus Domains"
-            subtitle="Prioritize these domains during session synthesis"
-          />
-          <CardBody>
-            <div className="flex flex-wrap gap-2">
-              {availableTopics.map((topic) => {
-                const isSelected = preferredTopics.includes(topic);
-                return (
-                  <button
-                    key={topic}
-                    type="button"
-                    onClick={() => handleTopicToggle(topic)}
-                    className={`px-3 py-1.5 rounded-[8px] font-mono text-xs font-medium transition-all border ${
-                      isSelected
-                        ? 'bg-[#7A263A] text-[#FFFDF9] border-[#7A263A] shadow-tactile'
-                        : 'bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] border-[#DED9D0] dark:border-[#332F2A] hover:bg-[#F0ECE4] dark:hover:bg-[#24201C]'
-                    }`}
-                  >
-                    {isSelected ? '✓ ' : '+ '}
-                    {topic}
-                  </button>
-                );
-              })}
-            </div>
-          </CardBody>
+      <form onSubmit={changePassword} className="mt-6">
+        <Card>
+          <CardHeader title="Password" icon={KeyRound} description="Use at least 8 characters." />
+          <div className="grid gap-5 sm:grid-cols-3">
+            <Field label="Current" htmlFor="pw-current">
+              <PasswordInput id="pw-current" autoComplete="current-password" value={pw.currentPassword} onChange={(e) => setPw((p) => ({ ...p, currentPassword: e.target.value }))} />
+            </Field>
+            <Field label="New" htmlFor="pw-new">
+              <PasswordInput id="pw-new" autoComplete="new-password" value={pw.newPassword} onChange={(e) => setPw((p) => ({ ...p, newPassword: e.target.value }))} />
+            </Field>
+            <Field label="Confirm new" htmlFor="pw-confirm">
+              <PasswordInput id="pw-confirm" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))} />
+            </Field>
+          </div>
+          {pwError && (
+            <p className="mt-3 text-sm text-danger" role="alert">
+              {pwError}
+            </p>
+          )}
+          <div className="mt-6 flex justify-end border-t border-line pt-5">
+            <Button type="submit" variant="secondary" isLoading={pwSaving} disabled={!pw.currentPassword || !pw.newPassword}>
+              Update password
+            </Button>
+          </div>
         </Card>
+      </form>
 
-        <div className="flex justify-end pt-1">
-          <Button type="submit" size="md" icon={Save} isLoading={isSaving}>
-            Save Preferences
+      <Card className="mt-6">
+        <CardHeader title="Privacy" icon={ShieldCheck} description="What MockVue keeps about you." />
+        <ul className="space-y-2 text-sm text-ink-2">
+          <li>Camera video and microphone audio are analysed on your device and never stored or uploaded.</li>
+          <li>We store your answers, scores, and a short log of proctoring events for each interview.</li>
+          <li>You can delete any interview (and its log) from the Interviews page.</li>
+        </ul>
+        <div className="mt-5 flex justify-end border-t border-line pt-5">
+          <Button variant="ghost" icon={Trash2} onClick={clearLocalData}>
+            Clear drafts saved in this browser
           </Button>
         </div>
-      </form>
-    </div>
+      </Card>
+    </PageContainer>
   );
 };
 

@@ -1,13 +1,14 @@
 {
   "name": "mockvue-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "MockVue Backend API & AI Engine",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "node tests/e2e_full_flow.test.js && node tests/proctoring_fullscreen_test.js"
+    "test": "node --import ./tests/setup.js --test",
+    "test:e2e": "node --import ./tests/setup.js --test tests/e2e/flow.e2e.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -25,5 +26,8 @@
     "nodemon": "^3.1.9"
   },
   "author": "MockVue Team",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.6"
+  }
 }

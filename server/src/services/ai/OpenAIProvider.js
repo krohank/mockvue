@@ -1,22 +1,25 @@
 import { AIProvider } from './AIProvider.js';
 import { buildQuestionGenerationPrompt } from './prompts/questionPrompts.js';
+import { buildEvaluationPrompt, EVALUATION_SYSTEM_PROMPT } from './prompts/evaluationPrompts.js';
 import { cleanAndParseJSON, validateQuestionsSchema } from './jsonParser.js';
+import { fetchJSON } from './http.js';
 
 export class OpenAIProvider extends AIProvider {
-  constructor(apiKey, model = 'gpt-4o-mini') {
+  constructor(apiKey, model = 'gpt-4o-mini', { timeoutMs = 20000, baseUrl = 'https://api.openai.com/v1' } = {}) {
     super('openai');
     this.apiKey = apiKey;
     this.model = model;
+    this.timeoutMs = timeoutMs;
+    this.baseUrl = baseUrl;
   }
 
-  async generateQuestions(config) {
-    if (!this.apiKey) {
-      throw new Error('OpenAI API key is not configured.');
-    }
+  async #chat(system, user, { temperature, signal }) {
+    if (!this.apiKey) throw new Error('OpenAI API key is not configured.');
 
-    const prompt = buildQuestionGenerationPrompt(config);
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const data = await fetchJSON(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
+      timeoutMs: this.timeoutMs,
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
@@ -24,73 +27,34 @@ export class OpenAIProvider extends AIProvider {
       body: JSON.stringify({
         model: this.model,
         messages: [
-          { role: 'system', content: 'You are an expert technical interviewer. Output valid JSON only.' },
-          { role: 'user', content: prompt },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
-        temperature: 0.4,
+        temperature,
         response_format: { type: 'json_object' },
       }),
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI API error [${response.status}]: ${err.slice(0, 200)}`);
-    }
+    const text = data?.choices?.[0]?.message?.content;
+    if (!text) throw new Error('OpenAI returned an empty response.');
+    return cleanAndParseJSON(text);
+  }
 
-    const data = await response.json();
-    const rawText = data?.choices?.[0]?.message?.content;
-    const parsed = cleanAndParseJSON(rawText);
-    const questions = validateQuestionsSchema(parsed);
-
+  async generateQuestions(config, { signal } = {}) {
+    const parsed = await this.#chat(
+      'You are a senior engineering interviewer. Respond with a single JSON object only.',
+      buildQuestionGenerationPrompt(config),
+      { temperature: 0.6, signal }
+    );
     return {
-      questions,
+      questions: validateQuestionsSchema(parsed),
       provider: 'openai',
       isFallback: false,
       model: this.model,
     };
   }
 
-  async evaluateAnswer(data) {
-    if (!this.apiKey) {
-      throw new Error('OpenAI API key is not configured.');
-    }
-
-    const prompt = `
-Evaluate the candidate answer for question: "${data.questionText}".
-Reference concepts: ${JSON.stringify(data.referenceConcepts)}.
-Candidate answer: "${data.candidateAnswer}".
-Return valid JSON with overallScore (0-100), criteriaScores { technicalCorrectness, relevance, completeness, clarity }, correctConcepts, missingConcepts, mistakes, explanation, feedback, improvedAnswer.
-`.trim();
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: 'system', content: 'You are a technical bar raiser. Respond with valid JSON matching the requested evaluation rubric.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI evaluation error: ${err.slice(0, 200)}`);
-    }
-
-    const dataRes = await response.json();
-    const parsed = cleanAndParseJSON(dataRes?.choices?.[0]?.message?.content);
-
-    return {
-      ...parsed,
-      isFallback: false,
-      provider: 'openai',
-    };
+  async evaluateAnswer(data, { signal } = {}) {
+    return this.#chat(EVALUATION_SYSTEM_PROMPT, buildEvaluationPrompt(data), { temperature: 0.2, signal });
   }
 }

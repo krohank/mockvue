@@ -1,14 +1,19 @@
 {
   "name": "mockvue-client",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test src/services/cv/cv.test.js",
+    "setup:vision": "node scripts/setup-vision-assets.mjs",
+    "postinstall": "node scripts/setup-vision-assets.mjs",
+    "prebuild": "node scripts/setup-vision-assets.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35",
     "axios": "^1.7.9",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^0.469.0",
@@ -26,5 +31,8 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7"
+  },
+  "engines": {
+    "node": ">=20.6"
   }
 }

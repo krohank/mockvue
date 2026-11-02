@@ -1,455 +1,411 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { 
-  Award, 
-  Check, 
-  AlertCircle, 
-  ChevronDown, 
-  ChevronUp, 
-  ArrowRight, 
-  Terminal, 
-  ShieldAlert, 
+import React, { useEffect, useMemo } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Printer,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Lightbulb,
   BookOpen,
-  Compass,
-  Plus,
+  ChevronDown,
+  Eye,
+  ScanFace,
+  Users,
+  Smartphone,
   FileText,
-  Printer
+  Info,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useAsync, useDocumentTitle } from '../hooks/useAsync';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { Spinner } from '../components/ui/Spinner';
+import { Card } from '../components/ui/Card';
+import { Alert, ErrorState, PageLoader, EmptyState } from '../components/ui/Feedback';
+import { ScoreRing, Meter, ScorePill } from '../components/ui/Metrics';
+import { PageContainer } from '../components/layout/PageHeader';
+import { RUBRIC, TOPIC_SHORT } from '../lib/constants';
+import { formatDate, formatClock, scoreBand, STATUS_META, END_REASON_LABEL, pluralize } from '../lib/format';
 import api from '../services/api';
+
+const EVENT_LABEL = {
+  person_out_of_frame: 'Out of frame',
+  no_face_detected: 'No face',
+  multiple_faces_detected: 'Multiple faces',
+  additional_person_detected: 'Another person',
+  phone_detected: 'Phone detected',
+  head_turned_away: 'Head turned away',
+  eye_gaze_deviated: 'Looked away',
+  looking_off_screen: 'Looked away',
+  audio_anomaly_detected: 'Voices detected',
+  window_blurred: 'Window lost focus',
+  window_focus_lost: 'Switched app',
+  tab_switched: 'Left the tab',
+  fullscreen_exit: 'Exited full-screen',
+  keyboard_shortcut_violation: 'Blocked shortcut',
+  paste_attempt: 'Paste attempt',
+  camera_disconnected: 'Camera disconnected',
+  camera_unavailable: 'No camera',
+  max_warnings_exceeded: 'Warning limit reached',
+  proctoring_started: 'Monitoring started',
+  proctoring_violation: 'Proctoring rule',
+};
+
+const ENGINE_LABEL = { mediapipe: 'Face, gaze & object detection', basic: 'Basic presence detection', none: 'Not monitored' };
+
+const Chips = ({ items, tone }) =>
+  items?.length ? (
+    <ul className="flex flex-wrap gap-1.5">
+      {items.map((c) => (
+        <li key={c} className={`rounded-md px-2 py-0.5 text-xs text-ink-2 ${tone === 'good' ? 'bg-success-soft' : tone === 'bad' ? 'bg-warning-soft' : 'bg-surface-2'}`}>
+          {c}
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-xs text-ink-3">—</p>
+  );
+
+const QuestionReport = ({ index, question, answer, defaultOpen }) => {
+  const band = scoreBand(answer?.overallScore);
+  return (
+    <details className="card group overflow-hidden" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none items-start gap-4 p-5 hover:bg-surface-2/50 sm:p-6 [&::-webkit-details-marker]:hidden">
+        <span className="num flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-sm font-semibold text-ink-2">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
+            <span>{TOPIC_SHORT[question.topic] || question.topic}</span>
+            <span aria-hidden="true">·</span>
+            <span>{question.difficulty}</span>
+            {question.type !== 'Technical' && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{question.type}</span>
+              </>
+            )}
+          </div>
+          <p className="mt-1 font-serif text-[17px] font-semibold leading-snug text-ink">{question.questionText}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {answer ? (
+            <span className="text-right">
+              <ScorePill score={answer.overallScore} />
+              <span className="mt-0.5 block text-[11px] text-ink-3">{band.label}</span>
+            </span>
+          ) : (
+            <Badge size="sm">Unanswered</Badge>
+          )}
+          <ChevronDown className="h-4 w-4 text-ink-3 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </div>
+      </summary>
+
+      <div className="space-y-6 border-t border-line p-5 sm:p-6">
+        {answer ? (
+          <>
+            <div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-ink">Your answer</h3>
+                <span className="flex items-center gap-2 text-xs text-ink-3">
+                  {answer.responseType !== 'text' && <Badge size="sm">{answer.responseType === 'voice' ? 'Dictated' : 'Typed + dictated'}</Badge>}
+                  {answer.timeSpentSeconds ? <span className="num">{formatClock(answer.timeSpentSeconds)}</span> : null}
+                </span>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap rounded-xl bg-surface-2 p-4 text-sm leading-relaxed text-ink">{answer.responseText}</p>
+            </div>
+
+            <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              {RUBRIC.map((r) => (
+                <Meter key={r.key} label={r.label} value={answer.criteriaScores?.[r.key] ?? 0} max={r.max} compact />
+              ))}
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-success">
+                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Concepts covered
+                </h3>
+                <Chips items={answer.correctConcepts} tone="good" />
+              </div>
+              <div>
+                <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-warning">
+                  <AlertTriangle className="h-4 w-4" aria-hidden="true" /> Concepts missed
+                </h3>
+                <Chips items={answer.missingConcepts} tone="bad" />
+              </div>
+            </div>
+
+            {(answer.feedback || answer.mistakes?.length > 0) && (
+              <div className="rounded-xl border border-line p-4">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                  <Lightbulb className="h-4 w-4 text-brass" aria-hidden="true" /> Feedback
+                </h3>
+                {answer.feedback && <p className="mt-2 text-sm leading-relaxed text-ink-2">{answer.feedback}</p>}
+                {answer.mistakes?.length > 0 && (
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ink-2">
+                    {answer.mistakes.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {answer.improvedAnswer && (
+              <div className="rounded-xl border border-accent-ink/20 bg-accent-soft p-4">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-accent-ink">
+                  <BookOpen className="h-4 w-4" aria-hidden="true" /> {answer.isFallbackEvaluation ? 'Answer outline' : 'Model answer'}
+                </h3>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink">{answer.improvedAnswer}</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-ink-3">You didn’t answer this question, so it scored zero.</p>
+        )}
+
+        {question.referenceConcepts?.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-ink">What a strong answer covers</h3>
+            <Chips items={question.referenceConcepts} />
+            {question.evaluationCriteria?.length > 0 && (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ink-2">
+                {question.evaluationCriteria.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+};
 
 export const InterviewResultsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [expandedIndex, setExpandedIndex] = useState(0);
-  const [monitoringEvents, setMonitoringEvents] = useState([]);
-
-  useEffect(() => {
-    Promise.all([
-      api.get(`/interviews/${id}/report`),
-      api.get(`/interviews/${id}/monitoring`).catch(() => ({ events: [] }))
-    ])
-      .then(([res, monRes]) => {
-        setData(res);
-        setMonitoringEvents(monRes?.events || []);
-        setLoading(false);
-
-        if (res.interview?.overallScore >= 70) {
-          try {
-            confetti({
-              particleCount: 70,
-              spread: 55,
-              origin: { y: 0.6 },
-              colors: ['#7A263A', '#C59A5B', '#3F6B52', '#F7F4EE']
-            });
-          } catch (e) {
-            // Ignore
-          }
-        }
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load interview report.');
-        setLoading(false);
-      });
+  const { data, loading, error, reload } = useAsync(async () => {
+    try {
+      const [report, monitoring] = await Promise.all([
+        api.get(`/interviews/${id}/report`),
+        api.get(`/interviews/${id}/monitoring`).catch(() => ({ events: [] })),
+      ]);
+      return { ...report, events: monitoring.events || [] };
+    } catch (err) {
+      if (err.status === 409) return { redirect: err.data?.status };
+      throw err;
+    }
   }, [id]);
 
-  if (loading) {
-    return (
-      <div className="min-h-[75vh] flex items-center justify-center">
-        <Spinner size="lg" label="Computing Comprehensive Assessment Dossier..." />
-      </div>
+  useDocumentTitle(data?.interview ? `Report · ${data.interview.title}` : 'Report');
+
+  useEffect(() => {
+    if (data?.redirect) navigate(`/interviews/${id}/${data.redirect === 'in_progress' ? 'room' : 'prep'}`, { replace: true });
+  }, [data, id, navigate]);
+
+  useEffect(() => {
+    const score = data?.interview?.overallScore;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (score >= 75 && data?.interview?.status === 'completed' && !reduced) {
+      try {
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.3 }, colors: ['#7A263A', '#D9B26F', '#2F7A50', '#F7F4EE'], disableForReducedMotion: true });
+      } catch {
+        /* decorative */
+      }
+    }
+  }, [data]);
+
+  const stats = useMemo(() => {
+    if (!data?.report) return null;
+    const total = data.report.length || 1;
+    const answered = data.report.filter((r) => r.answer);
+    const criteria = Object.fromEntries(
+      RUBRIC.map((r) => [r.key, Math.round(answered.reduce((s, x) => s + (x.answer.criteriaScores?.[r.key] || 0), 0) / total)])
     );
-  }
+    const pct = RUBRIC.map((r) => ({ ...r, pct: (criteria[r.key] / r.max) * 100 }));
+    const sorted = [...pct].sort((a, b) => b.pct - a.pct);
+    const timeUsed = answered.reduce((s, x) => s + (x.answer.timeSpentSeconds || 0), 0);
+    // Lowest-scoring question's topic (unanswered = 0) is the best thing to practise next.
+    const weakest = [...data.report].sort((a, b) => (a.answer?.overallScore ?? 0) - (b.answer?.overallScore ?? 0))[0];
+    return {
+      criteria,
+      strongest: sorted[0],
+      weakest: sorted[sorted.length - 1],
+      weakTopic: weakest?.question?.topic || data.interview.topics?.[0] || '',
+      answeredCount: answered.length,
+      timeUsed,
+      total: data.report.length,
+    };
+  }, [data]);
 
-  if (error || !data) {
-    return (
-      <div className="max-w-md mx-auto my-20 p-6 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] text-center shadow-paper">
-        <AlertCircle className="w-8 h-8 text-[#A33B3B] mx-auto mb-2" />
-        <h2 className="text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">Dossier Unavailable</h2>
-        <p className="text-xs font-mono text-[#68645E] dark:text-[#9E988F] mb-5">{error || 'Session report records could not be retrieved.'}</p>
-        <Button size="sm" onClick={() => navigate('/dashboard')}>Return to Workspace</Button>
-      </div>
-    );
-  }
+  if (loading || data?.redirect) return <PageLoader label="Building your report…" />;
+  if (error) return <ErrorState title="Report unavailable" message={error.message} onRetry={reload} action={<Link to="/history" className="link text-sm">All interviews</Link>} />;
 
-  const { interview, report = [] } = data;
-  const overallScore = interview.overallScore || 0;
-
-  const totalQuestions = report.length || 1;
-  const avgTechnical = Math.round(
-    report.reduce((sum, r) => sum + (r.answer?.criteriaScores?.technicalCorrectness || 0), 0) / totalQuestions
-  );
-  const avgRelevance = Math.round(
-    report.reduce((sum, r) => sum + (r.answer?.criteriaScores?.relevance || 0), 0) / totalQuestions
-  );
-  const avgCompleteness = Math.round(
-    report.reduce((sum, r) => sum + (r.answer?.criteriaScores?.completeness || 0), 0) / totalQuestions
-  );
-  const avgClarity = Math.round(
-    report.reduce((sum, r) => sum + (r.answer?.criteriaScores?.clarity || 0), 0) / totalQuestions
-  );
+  const { interview, report, events } = data;
+  const score = interview.overallScore ?? 0;
+  const band = scoreBand(score);
+  const meta = STATUS_META[interview.status] || STATUS_META.completed;
+  const summary = interview.proctoringSummary;
+  const warningEvents = events.filter((e) => e.severity !== 'info');
+  const startedAt = interview.startedAt ? new Date(interview.startedAt).getTime() : null;
+  const retakeUrl = `/interviews/new?topic=${encodeURIComponent(stats.weakTopic)}&difficulty=${interview.difficulty}`;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in font-sans">
-      {/* Assessment Dossier Masthead */}
-      <div className="p-6 sm:p-8 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-paper">
-        <div className="space-y-2.5">
-          <div className="flex flex-wrap items-center gap-2 font-mono">
-            <Badge variant="brand" size="sm">{interview.difficulty?.toUpperCase()}</Badge>
-            <Badge variant="neutral" size="sm">{interview.targetRole}</Badge>
-            <Badge variant={overallScore >= 75 ? 'success' : overallScore >= 50 ? 'warning' : 'danger'} size="sm">
-              {overallScore >= 75 ? 'PLACEMENT READY' : overallScore >= 50 ? 'PROFICIENT' : 'NEEDS REFINEMENT'}
-            </Badge>
-          </div>
-          <div>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-              OFFICIAL EVALUATION DOSSIER
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-              {interview.title || 'Technical Assessment Report'}
-            </h1>
-          </div>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">
-            Concluded: {new Date(interview.completedAt || interview.updatedAt).toLocaleDateString(undefined, {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })} • ID: #{interview._id?.slice(-8).toUpperCase()}
-          </p>
-        </div>
-
-        {/* Score Plaque */}
-        <div className="flex flex-col items-center justify-center p-5 rounded-xl bg-[#F7F4EE] dark:bg-[#141210] border border-[#DED9D0] dark:border-[#332F2A] min-w-[190px] font-mono text-center">
-          <span className="text-[10px] uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] font-medium">
-            OVERALL RUBRIC SCORE
-          </span>
-          <span className="text-4xl sm:text-5xl font-serif font-bold text-[#7A263A] dark:text-[#D4AA6A] my-1">
-            {overallScore}%
-          </span>
-          <span className="text-[11px] text-[#68645E] dark:text-[#9E988F]">
-            {report.filter((r) => r.answer).length} OF {report.length} RESPONSES EVALUATED
-          </span>
+    <PageContainer size="lg">
+      <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
+        <Button as={Link} to="/history" variant="ghost" size="sm" icon={ArrowLeft}>
+          All interviews
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" icon={Printer} onClick={() => window.print()}>
+            Print / PDF
+          </Button>
+          <Button as={Link} to={retakeUrl} size="sm" icon={RotateCcw}>
+            Practice again
+          </Button>
         </div>
       </div>
 
-      {/* Proctoring Early Termination Banner */}
-      {(interview.status === 'terminated' || interview.terminationReason) && (
-        <div className="p-4 sm:p-5 rounded-xl border border-[#E8C4C4] dark:border-[#A33B3B]/40 bg-[#FAF0F0] dark:bg-[#A33B3B]/10 flex items-start gap-3.5 text-xs">
-          <div className="w-8 h-8 rounded-lg bg-[#A33B3B]/15 text-[#A33B3B] dark:text-[#E59797] flex items-center justify-center shrink-0 border border-[#A33B3B]/30">
-            <ShieldAlert className="w-4 h-4" />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#A33B3B] dark:text-[#E59797]">
-                EXAMINATION CONCLUDED EARLY BY PROCTORING
-              </span>
-              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#A33B3B]/10 text-[#A33B3B] dark:text-[#E59797] border border-[#A33B3B]/20">
-                SECURITY TERMINATION
-              </span>
-            </div>
-            <p className="text-[#171717] dark:text-[#F7F4EE] font-sans leading-relaxed">
-              Reason: <strong>{interview.terminationReason || 'Full-screen mode was exited during the examination.'}</strong>
-              {' '}All questions submitted prior to exit have been fully evaluated according to the 4-tier rubric.
-            </p>
-          </div>
+      <header className="pb-6">
+        <p className="eyebrow">Interview report</p>
+        <h1 className="display mt-2 text-3xl sm:text-4xl">{interview.title}</h1>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-3">
+          <Badge tone={meta.tone} dot>
+            {meta.label}
+          </Badge>
+          <span>{formatDate(interview.completedAt || interview.updatedAt, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          <span aria-hidden="true">·</span>
+          <span>{interview.difficulty}</span>
+          <span aria-hidden="true">·</span>
+          <span>{interview.interviewType}</span>
+          {interview.endReason && interview.endReason !== 'all_answered' && interview.status !== 'terminated' && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{END_REASON_LABEL[interview.endReason]}</span>
+            </>
+          )}
         </div>
+      </header>
+
+      {interview.status === 'terminated' && (
+        <Alert tone="danger" icon={ShieldAlert} title="This interview was ended by proctoring" className="mb-6">
+          {interview.terminationReason} Answers submitted before that point were scored; the rest count as zero.
+        </Alert>
       )}
 
-      {/* Proctoring & Security Audit Trail */}
-      {monitoringEvents.length > 0 && (
-        <Card className="p-5 shadow-paper space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#DED9D0] dark:border-[#332F2A]">
-            <div className="flex items-center gap-2 font-mono text-xs">
-              <ShieldAlert className="w-4 h-4 text-[#7A263A] dark:text-[#D4AA6A]" />
-              <span className="font-bold text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider">
-                Proctoring & Anti-Cheat Audit Trail
-              </span>
-            </div>
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#FAF0F0] text-[#A33B3B] dark:bg-[#A33B3B]/20 dark:text-[#E59797] border border-[#E8C4C4] font-semibold">
-              {monitoringEvents.length} INCIDENTS RECORDED
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {monitoringEvents.map((evt, idx) => (
-              <div
-                key={evt._id || idx}
-                className="p-2.5 rounded-lg bg-[#F7F4EE] dark:bg-[#141210] border border-[#DED9D0] dark:border-[#332F2A] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#A33B3B]" />
-                  <strong className="text-[#171717] dark:text-[#F7F4EE] uppercase">
-                    {evt.eventType.replace(/_/g, ' ')}
-                  </strong>
-                  <span className="text-[#68645E] dark:text-[#9E988F] text-[11px]">
-                    — {evt.description}
-                  </span>
-                </div>
-                <span className="text-[10px] text-[#68645E] dark:text-[#9E988F] shrink-0">
-                  {new Date(evt.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
+      <div className="grid gap-6 md:grid-cols-[auto_1fr]">
+        <Card className="flex flex-col items-center justify-center md:min-w-[240px]">
+          <ScoreRing score={score} size={150} stroke={12} />
+          <p className="mt-3 text-center text-sm text-ink-3">
+            {stats.answeredCount} of {pluralize(stats.total, 'question')} answered
+          </p>
+        </Card>
+        <Card>
+          <h2 className="text-base font-semibold text-ink">Rubric breakdown</h2>
+          <p className="mt-1 text-sm text-ink-2">
+            {stats.answeredCount === 0
+              ? 'No answers were submitted.'
+              : `Overall ${band.label.toLowerCase()}. Strongest on ${stats.strongest.label.toLowerCase()}; the most room to improve is ${stats.weakest.label.toLowerCase()}.`}
+          </p>
+          <div className="mt-5 space-y-4">
+            {RUBRIC.map((r) => (
+              <Meter key={r.key} label={r.label} value={stats.criteria[r.key]} max={r.max} hint={r.desc} />
             ))}
           </div>
         </Card>
-      )}
-
-      {/* 4-Tier Rubric Criteria Grid */}
-      <div className="space-y-3.5">
-        <div className="flex items-center justify-between pb-1 border-b border-[#DED9D0] dark:border-[#332F2A]">
-          <h2 className="text-base sm:text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-            Rubric Criteria Breakdown
-          </h2>
-          <span className="font-mono text-[11px] text-[#68645E] dark:text-[#9E988F]">
-            WEIGHTED CALIBRATION
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          <Card className="p-4 space-y-2">
-            <div className="flex justify-between items-center font-mono">
-              <span className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase">Technical (40%)</span>
-              <span className="text-sm font-bold text-[#3F6B52] dark:text-[#88BA9D]">{avgTechnical} / 40</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-              <div
-                className="h-full bg-[#3F6B52] rounded-full transition-all duration-500"
-                style={{ width: `${(avgTechnical / 40) * 100}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-[#68645E] dark:text-[#9E988F] font-mono">Core mechanics & accuracy</p>
-          </Card>
-
-          <Card className="p-4 space-y-2">
-            <div className="flex justify-between items-center font-mono">
-              <span className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase">Relevance (20%)</span>
-              <span className="text-sm font-bold text-[#7A263A] dark:text-[#D4AA6A]">{avgRelevance} / 20</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-              <div
-                className="h-full bg-[#7A263A] dark:bg-[#D4AA6A] rounded-full transition-all duration-500"
-                style={{ width: `${(avgRelevance / 20) * 100}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-[#68645E] dark:text-[#9E988F] font-mono">Direct prompt alignment</p>
-          </Card>
-
-          <Card className="p-4 space-y-2">
-            <div className="flex justify-between items-center font-mono">
-              <span className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase">Completeness (20%)</span>
-              <span className="text-sm font-bold text-[#A66A24] dark:text-[#DEAC74]">{avgCompleteness} / 20</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-              <div
-                className="h-full bg-[#A66A24] rounded-full transition-all duration-500"
-                style={{ width: `${(avgCompleteness / 20) * 100}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-[#68645E] dark:text-[#9E988F] font-mono">Edge cases & scale hazards</p>
-          </Card>
-
-          <Card className="p-4 space-y-2">
-            <div className="flex justify-between items-center font-mono">
-              <span className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase">Clarity (20%)</span>
-              <span className="text-sm font-bold text-[#C59A5B] dark:text-[#D4AA6A]">{avgClarity} / 20</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-              <div
-                className="h-full bg-[#C59A5B] rounded-full transition-all duration-500"
-                style={{ width: `${(avgClarity / 20) * 100}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-[#68645E] dark:text-[#9E988F] font-mono">Narrative flow & precision</p>
-          </Card>
-        </div>
       </div>
 
-      {/* Question-by-Question Dossier Review */}
-      <div className="space-y-3.5">
-        <div className="flex items-center justify-between pb-1 border-b border-[#DED9D0] dark:border-[#332F2A]">
-          <h2 className="text-base sm:text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-            Question Critique & Exemplar Analyses
-          </h2>
-          <span className="font-mono text-[11px] text-[#68645E] dark:text-[#9E988F]">
-            {report.length} ITEMS
-          </span>
+      <Card className="mt-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
+              {summary?.engine && summary.engine !== 'none' ? (
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" />
+              ) : (
+                <Info className="h-4 w-4 text-ink-3" aria-hidden="true" />
+              )}
+              Proctoring
+            </h2>
+            <p className="mt-1 text-sm text-ink-3">{ENGINE_LABEL[summary?.engine || 'none']}{summary?.calibrated ? ' · calibrated' : ''}</p>
+          </div>
+          <Badge tone={interview.proctoringViolations === 0 ? 'success' : interview.proctoringViolations >= 3 ? 'danger' : 'warning'}>
+            {pluralize(interview.proctoringViolations || 0, 'warning')}
+          </Badge>
         </div>
 
-        <div className="space-y-3">
-          {report.map((item, idx) => {
-            const isExpanded = expandedIndex === idx;
-            const q = item.question;
-            const a = item.answer;
-
-            return (
-              <div
-                key={q._id || idx}
-                className="rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] overflow-hidden shadow-paper transition-all duration-150"
-              >
-                {/* Collapsible Header Bar */}
-                <button
-                  onClick={() => setExpandedIndex(isExpanded ? null : idx)}
-                  className="w-full p-4 sm:p-5 text-left flex items-start justify-between gap-4 hover:bg-[#F0ECE4]/40 dark:hover:bg-[#24201C] transition-colors"
-                >
-                  <div className="space-y-1.5 pr-2">
-                    <div className="flex items-center gap-2 font-mono text-xs">
-                      <span className="px-2 py-0.5 rounded-[6px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] font-semibold border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                        Q{idx + 1}
-                      </span>
-                      <span className="font-semibold text-[#171717] dark:text-[#F7F4EE]">{q.topic}</span>
-                      <span className="text-[#DED9D0] dark:text-[#332F2A]">•</span>
-                      <span className="text-[#68645E] dark:text-[#9E988F]">{q.difficulty}</span>
-                    </div>
-                    <h3 className="text-sm sm:text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE] leading-snug">
-                      {q.questionText}
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-mono text-xs sm:text-sm font-bold text-[#7A263A] dark:text-[#D4AA6A]">
-                      {a ? `${a.overallScore}%` : 'Unanswered'}
-                    </span>
-                    {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-[#68645E] dark:text-[#9E988F]" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-[#68645E] dark:text-[#9E988F]" />
-                    )}
-                  </div>
-                </button>
-
-                {/* Expanded Details Body */}
-                {isExpanded && (
-                  <div className="p-5 border-t border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE]/50 dark:bg-[#141210]/50 space-y-4">
-                    {/* Candidate Submitted Response */}
-                    <div>
-                      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-                        CANDIDATE SUBMITTED RESPONSE:
-                      </span>
-                      <div className="p-3.5 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] text-xs text-[#171717] dark:text-[#F7F4EE] leading-relaxed">
-                        {a ? `"${a.responseText}"` : 'No response was submitted for this question.'}
-                      </div>
-                    </div>
-
-                    {/* Criteria Breakdown for this Question */}
-                    {a && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono text-xs">
-                        <div className="p-2.5 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] text-center">
-                          <span className="text-[#68645E] dark:text-[#9E988F] block text-[10px]">Technical</span>
-                          <strong className="text-[#3F6B52] dark:text-[#88BA9D] font-bold">{a.criteriaScores?.technicalCorrectness} / 40</strong>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] text-center">
-                          <span className="text-[#68645E] dark:text-[#9E988F] block text-[10px]">Relevance</span>
-                          <strong className="text-[#7A263A] dark:text-[#D4AA6A] font-bold">{a.criteriaScores?.relevance} / 20</strong>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] text-center">
-                          <span className="text-[#68645E] dark:text-[#9E988F] block text-[10px]">Completeness</span>
-                          <strong className="text-[#A66A24] dark:text-[#DEAC74] font-bold">{a.criteriaScores?.completeness} / 20</strong>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] text-center">
-                          <span className="text-[#68645E] dark:text-[#9E988F] block text-[10px]">Clarity</span>
-                          <strong className="text-[#C59A5B] dark:text-[#D4AA6A] font-bold">{a.criteriaScores?.clarity} / 20</strong>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Concepts Covered vs Missing */}
-                    {a && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-                        <div className="p-3 rounded-lg bg-[#EFF5F1] dark:bg-[#3F6B52]/20 border border-[#C2D9CB] dark:border-[#3F6B52]/40">
-                          <span className="font-semibold text-[#3F6B52] dark:text-[#88BA9D] flex items-center gap-1.5 mb-1.5 text-[11px]">
-                            <Check className="w-3.5 h-3.5" /> CONCEPTS DEMONSTRATED:
-                          </span>
-                          <ul className="list-disc list-inside text-[#171717] dark:text-[#F7F4EE] space-y-0.5 text-[11px]">
-                            {a.correctConcepts?.map((c, i) => (
-                              <li key={i}>{c}</li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div className="p-3 rounded-lg bg-[#FBF5EC] dark:bg-[#A66A24]/20 border border-[#E8D5BE] dark:border-[#A66A24]/40">
-                          <span className="font-semibold text-[#A66A24] dark:text-[#DEAC74] flex items-center gap-1.5 mb-1.5 text-[11px]">
-                            <AlertCircle className="w-3.5 h-3.5" /> MISSING CONCEPTS & HAZARDS:
-                          </span>
-                          <ul className="list-disc list-inside text-[#171717] dark:text-[#F7F4EE] space-y-0.5 text-[11px]">
-                            {a.missingConcepts?.map((c, i) => (
-                              <li key={i}>{c}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Interviewer Constructive Feedback */}
-                    {a?.feedback && (
-                      <div className="p-3 rounded-lg bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-                          EXPERT DIAGNOSTIC CRITIQUE:
-                        </span>
-                        <p className="text-xs text-[#171717] dark:text-[#F7F4EE] leading-relaxed">
-                          {a.feedback}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Exemplar / Model Answer */}
-                    {a?.improvedAnswer && (
-                      <div className="p-3.5 rounded-lg bg-[#FAF0F2] dark:bg-[#7A263A]/15 border border-[#E8C5CC] dark:border-[#7A263A]/30">
-                        <span className="font-mono text-[10px] font-bold text-[#7A263A] dark:text-[#E8A5B2] uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
-                          <Terminal className="w-3.5 h-3.5" /> EXEMPLAR BENCHMARK RESPONSE:
-                        </span>
-                        <p className="text-xs text-[#171717] dark:text-[#F7F4EE] leading-relaxed font-sans">
-                          {a.improvedAnswer}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+        {summary && summary.engine !== 'none' && (
+          <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[
+              { icon: ScanFace, label: 'Face in view', value: summary.facePresentPct },
+              { icon: Eye, label: 'Looking at screen', value: summary.attentionPct },
+              { icon: Users, label: 'Others in view', value: summary.multiplePeoplePct },
+              { icon: Smartphone, label: 'Phone detections', value: summary.phoneDetections, raw: true },
+            ].map((m) => (
+              <div key={m.label} className="rounded-xl bg-surface-2 p-3">
+                <dt className="flex items-center gap-1.5 text-xs text-ink-3">
+                  <m.icon className="h-3.5 w-3.5" aria-hidden="true" /> {m.label}
+                </dt>
+                <dd className="num mt-1 text-lg font-semibold text-ink">{m.value === null || m.value === undefined ? '—' : m.raw ? m.value : `${Math.round(m.value)}%`}</dd>
               </div>
-            );
-          })}
-        </div>
-      </div>
+            ))}
+          </dl>
+        )}
 
-      {/* Academic Disclaimer Card */}
-      <div className="p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] text-xs text-[#68645E] dark:text-[#9E988F] flex items-start gap-3 shadow-paper">
-        <ShieldAlert className="w-4 h-4 text-[#7A263A] dark:text-[#D4AA6A] shrink-0 mt-0.5" />
-        <div className="text-[11px] leading-relaxed">
-          <strong className="text-[#171717] dark:text-[#F7F4EE] font-semibold block mb-0.5">
-            Academic Evaluation & Ethical Integrity Protocol
-          </strong>
-          MockVue scores answers strictly through calibrated 4-tier rubric matrices (Technical 40%, Relevance 20%, Completeness 20%, Clarity 20%). Video proctoring is evaluated client-side in RAM and never stored as raw media.
-        </div>
-      </div>
+        {warningEvents.length > 0 ? (
+          <ol className="mt-5 divide-y divide-line border-t border-line">
+            {warningEvents.map((e) => (
+              <li key={e._id} className="flex items-start gap-3 py-2.5 text-sm">
+                <span className="num w-14 shrink-0 text-xs text-ink-3">
+                  {startedAt ? `+${formatClock(Math.max(0, (new Date(e.timestamp).getTime() - startedAt) / 1000))}` : new Date(e.timestamp).toLocaleTimeString()}
+                </span>
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${e.severity === 'critical' ? 'bg-danger' : 'bg-warning'}`} aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="font-medium text-ink">{EVENT_LABEL[e.eventType] || e.eventType}</span>
+                  <span className="text-ink-3"> — {e.description}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-sm text-ink-2">
+            <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> No proctoring issues were recorded.
+          </p>
+        )}
+      </Card>
 
-      {/* Post-Interview Navigation */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[#DED9D0] dark:border-[#332F2A]">
-        <Link to="/dashboard">
-          <Button variant="secondary" size="md" icon={Compass}>
-            Return to Workspace
-          </Button>
-        </Link>
-        <div className="flex items-center gap-2.5">
-          <Link to="/history">
-            <Button variant="outline" size="md" icon={BookOpen}>
-              Assessment History
-            </Button>
-          </Link>
-          <Link to="/interviews/new">
-            <Button size="md" icon={Plus}>
-              New Assessment
-            </Button>
-          </Link>
+      <section className="mt-10" aria-labelledby="questions-heading">
+        <div className="mb-4 flex items-end justify-between">
+          <h2 id="questions-heading" className="display text-2xl">
+            Question by question
+          </h2>
+          {stats.timeUsed > 0 && (
+            <span className="flex items-center gap-1.5 text-sm text-ink-3">
+              <Clock className="h-4 w-4" aria-hidden="true" /> <span className="num">{formatClock(stats.timeUsed)}</span> answering
+            </span>
+          )}
         </div>
-      </div>
-    </div>
+        {report.length === 0 ? (
+          <EmptyState icon={FileText} title="No questions in this interview" />
+        ) : (
+          <div className="space-y-3">
+            {report.map((item, i) => (
+              <QuestionReport key={item.question._id} index={i} question={item.question} answer={item.answer} defaultOpen={i === 0} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p className="mt-10 text-center text-xs text-ink-3">
+        {report.some((r) => r.answer?.isFallbackEvaluation)
+          ? 'Scored by the offline rubric engine (concept coverage, structure and depth). Configure an AI provider on the server for semantic grading.'
+          : 'Scored by an AI evaluator against the four-part rubric.'}{' '}
+        Proctoring signals are indicators for practice, not proof of misconduct.
+      </p>
+    </PageContainer>
   );
 };
 

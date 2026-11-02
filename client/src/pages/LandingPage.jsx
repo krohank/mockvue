@@ -1,495 +1,412 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  ArrowRight, 
-  ShieldCheck, 
-  Mic, 
-  Activity, 
-  Check, 
-  Award,
-  BookOpen,
-  Scale,
-  Sparkles,
-  ChevronRight
+import {
+  ArrowRight,
+  Mic,
+  ScanFace,
+  Users,
+  Smartphone,
+  Eye,
+  AudioLines,
+  Maximize,
+  ClipboardX,
+  ShieldCheck,
+  Lock,
+  SlidersHorizontal,
+  MessageSquareText,
+  LineChart,
+  CheckCircle2,
+  Timer,
+  BookOpenCheck,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { Card } from '../components/ui/Card';
+import { ScoreRing, Meter } from '../components/ui/Metrics';
 import { useAuth } from '../context/AuthContext';
+import { useDocumentTitle } from '../hooks/useAsync';
+import { TOPICS, RUBRIC } from '../lib/constants';
 import api from '../services/api';
 
-export const LandingPage = () => {
-  const { isAuthenticated, user } = useAuth();
-  const [health, setHealth] = useState(null);
-  const [healthLoading, setHealthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('rubric');
+const PROVIDER_LABEL = { gemini: 'Google Gemini', openai: 'OpenAI', fallback: 'Offline rubric engine' };
 
-  useEffect(() => {
-    api.get('/health')
-      .then((data) => {
-        setHealth(data);
-        setHealthLoading(false);
-      })
-      .catch((err) => {
-        console.warn('Backend health check warning:', err.message);
-        setHealth({ status: 'operational', database: { status: 'in-memory' }, ai: { configuredProvider: 'fallback' } });
-        setHealthLoading(false);
-      });
-  }, []);
+/** Stylised (not photographic) face-mesh illustration for the preview card. */
+const MeshIllustration = () => (
+  <svg viewBox="0 0 200 150" className="h-full w-full" aria-hidden="true">
+    <defs>
+      <radialGradient id="mv-bg" cx="50%" cy="40%" r="70%">
+        <stop offset="0%" stopColor="#3a332d" />
+        <stop offset="100%" stopColor="#1b1815" />
+      </radialGradient>
+    </defs>
+    <rect width="200" height="150" fill="url(#mv-bg)" />
+    <path d="M60 150c4-24 20-34 40-34s36 10 40 34" fill="#2b2622" />
+    <ellipse cx="100" cy="66" rx="27" ry="34" fill="#4a3f37" />
+    <g fill="none" stroke="#5FA57A" strokeWidth="1.1" opacity="0.95">
+      <ellipse cx="100" cy="66" rx="27" ry="34" />
+      <path d="M84 58q5-4 10 0M106 58q5-4 10 0" />
+      <ellipse cx="89" cy="62" rx="5" ry="2.6" />
+      <ellipse cx="111" cy="62" rx="5" ry="2.6" />
+      <path d="M100 63v12l-4 3h8" />
+      <path d="M91 85q9 5 18 0" />
+    </g>
+    <g fill="#5FA57A">
+      <circle cx="89" cy="62" r="1.5" />
+      <circle cx="111" cy="62" r="1.5" />
+    </g>
+    <g fill="none" stroke="#5FA57A" strokeWidth="2.2" strokeLinecap="round">
+      <path d="M66 32v-6h6M134 32v-6h-6M66 100v6h6M134 100v6h-6" />
+    </g>
+    <path d="M100 75l0-14" stroke="#5FA57A" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
 
-  return (
-    <div className="relative min-h-screen bg-[#F7F4EE] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] selection:bg-[#7A263A] selection:text-white transition-colors duration-150">
-      {/* Top Academic Telemetry Strip */}
-      <div className="border-b border-[#DED9D0] dark:border-[#332F2A] bg-[#F0ECE4]/90 dark:bg-[#1C1916]/90 py-1.5 px-4 text-xs font-mono">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#3F6B52]" />
-            <span className="text-[#68645E] dark:text-[#9E988F]">
-              EVALUATION ENGINE:
-            </span>
-            <span className="text-[#171717] dark:text-[#F7F4EE] font-semibold">
-              {healthLoading ? 'CALIBRATING...' : `${health?.database?.status?.toUpperCase() || 'ONLINE'} DB | AI: ${health?.ai?.configuredProvider?.toUpperCase() || 'FALLBACK_VIVA'}`}
+const ProductPreview = () => (
+  <div className="relative">
+    <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-accent-soft via-transparent to-brass-soft opacity-80 blur-2xl" aria-hidden="true" />
+    <div className="card overflow-hidden shadow-raised" role="img" aria-label="Preview of the MockVue interview room: a question, a live camera check, and a scored answer.">
+      <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-2.5">
+        <div className="flex items-center gap-2 text-xs font-medium text-ink-2">
+          <span className="rounded-md bg-surface px-2 py-0.5 num">Q2 / 5</span>
+          <span>System Design · Medium</span>
+        </div>
+        <span className="num inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+          <Timer className="h-3.5 w-3.5 text-ink-3" /> 14:32
+        </span>
+      </div>
+      <div className="grid gap-4 p-4 sm:grid-cols-[1.25fr_1fr] sm:p-5">
+        <div className="space-y-3">
+          <p className="font-serif text-[17px] font-semibold leading-snug text-ink">
+            How would you add a Redis cache to a high-traffic service, and how would you handle invalidation?
+          </p>
+          <div className="rounded-xl border border-line bg-canvas p-3 text-[13px] leading-relaxed text-ink-2">
+            I&apos;d use cache-aside: read Redis first, fall back to the database on a miss and populate with a TTL. On writes,
+            delete the key and publish an event so other instances drop stale copies…
+          </div>
+          <div className="flex items-center gap-4 rounded-xl border border-line p-3">
+            <ScoreRing score={82} size={76} stroke={7} showBand={false} />
+            <div className="flex-1 space-y-2">
+              <Meter compact label="Technical" value={33} max={40} />
+              <Meter compact label="Completeness" value={16} max={20} />
+            </div>
+          </div>
+        </div>
+        <div className="space-y-2.5">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#1b1815]">
+            <MeshIllustration />
+            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#5FA57A]" /> On-device
             </span>
           </div>
-          <div className="flex items-center gap-4 text-[#68645E] dark:text-[#9E988F]">
-            <span>CALIBRATION: 40/20/20/20</span>
-            <span className="hidden sm:inline">FULLSCREEN PROCTORING: STRICT</span>
-            <span className="text-[#7A263A] dark:text-[#D4AA6A] font-semibold">B.TECH VIVA READY</span>
-          </div>
+          {[
+            ['Face in frame', 'Yes'],
+            ['Looking at screen', 'Yes'],
+            ['People detected', '1'],
+            ['Phone detected', 'No'],
+          ].map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs">
+              <span className="text-ink-2">{k}</span>
+              <span className="inline-flex items-center gap-1 font-medium text-ink">
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+                {v}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
+    </div>
+  </div>
+);
 
-      {/* Hero Section: Editorial Split Layout */}
-      <section className="pt-14 pb-20 md:pt-24 md:pb-32 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
-          
-          {/* Left Column: Authoritative Engineering Headline & Value Prop */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[8px] border border-[#E8C5CC] dark:border-[#7A263A]/40 bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] font-mono text-xs font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7A263A]" />
-              INSTITUTIONAL TECHNICAL EVALUATION STANDARD
-            </div>
+const STEPS = [
+  { icon: SlidersHorizontal, title: 'Configure', body: 'Pick a role, topics, difficulty and length — or start from a preset.' },
+  { icon: MessageSquareText, title: 'Interview', body: 'Answer timed questions in full-screen. Type, or dictate with speech-to-text.' },
+  { icon: LineChart, title: 'Review', body: 'Get a score per rubric criterion, what you missed, and a model answer. Track progress over time.' },
+];
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE] leading-[1.12]">
-              Technical Mock Interviews Evaluated by
-              <span className="inline-flex items-center align-middle mx-2.5 px-3 py-0.5 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] text-[#7A263A] dark:text-[#D4AA6A] font-serif italic border border-[#DED9D0] dark:border-[#332F2A] shadow-sm">
-                Rubric
-              </span>
-              Not Keyword Guesswork.
-            </h1>
+const VISION_CHECKS = [
+  { icon: ScanFace, title: 'Presence', body: 'A face mesh with 478 landmarks confirms you are in frame.' },
+  { icon: Users, title: 'Other people', body: 'Counts faces and bodies, so a helper off to the side is noticed.' },
+  { icon: Eye, title: 'Head pose & gaze', body: 'Estimates where you are looking, calibrated to your own camera angle.' },
+  { icon: Smartphone, title: 'Phones', body: 'An object detector looks for a mobile phone in view.' },
+  { icon: AudioLines, title: 'Voices', body: 'Flags speech in the room while your own lips are not moving.' },
+];
 
-            <p className="text-base sm:text-lg text-[#68645E] dark:text-[#9E988F] font-normal leading-relaxed max-w-2xl">
-              An editorial-grade technical assessment platform designed for placement readiness and university viva defense.
-              Generates rigorous questions across CS fundamentals, monitors camera continuity and fullscreen adherence, and scores across four calibrated criteria.
-            </p>
+const BROWSER_RULES = [
+  { icon: Maximize, text: 'The session runs in full-screen. Leaving it ends the interview.' },
+  { icon: Lock, text: 'Switching tabs or apps ends the interview; a brief focus slip is a warning.' },
+  { icon: ClipboardX, text: 'Copy, paste and developer tools are blocked and logged.' },
+];
 
-            {/* Spec Metrics Row */}
-            <div className="grid grid-cols-3 gap-3 py-2 max-w-lg font-mono">
-              <div className="p-3.5 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-sm">
-                <div className="text-2xl font-bold font-serif text-[#171717] dark:text-[#F7F4EE]">12+</div>
-                <div className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase tracking-tight mt-0.5">CS Core Tracks</div>
-              </div>
-              <div className="p-3.5 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-sm">
-                <div className="text-2xl font-bold font-serif text-[#7A263A] dark:text-[#D4AA6A]">4-Tier</div>
-                <div className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase tracking-tight mt-0.5">Rubric Weights</div>
-              </div>
-              <div className="p-3.5 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-sm">
-                <div className="text-2xl font-bold font-serif text-[#3F6B52] dark:text-[#528568]">100%</div>
-                <div className="text-[11px] text-[#68645E] dark:text-[#9E988F] uppercase tracking-tight mt-0.5">Proctored Audit</div>
-              </div>
-            </div>
+const FAIRNESS = [
+  'Five warnings are allowed before a session ends.',
+  'Conditions must persist (for example 5 s looking away) before a warning.',
+  'Glancing down at the keyboard while typing is never counted.',
+  'Each rule has a cool-down so one issue can’t pile up warnings.',
+];
 
-            {/* Hero CTAs */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
-              {isAuthenticated ? (
-                <>
-                  <Link to="/dashboard">
-                    <Button size="lg" icon={ArrowRight} className="w-full sm:w-auto font-medium">
-                      Enter Workspace ({user?.name?.split(' ')[0] || 'Candidate'})
-                    </Button>
-                  </Link>
-                  <Link to="/interviews/new">
-                    <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                      New Assessment
-                    </Button>
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link to="/register">
-                    <Button size="lg" icon={ArrowRight} className="w-full sm:w-auto font-medium">
-                      Launch Practice Session
-                    </Button>
-                  </Link>
-                  <Link to="/login">
-                    <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                      Candidate Login
-                    </Button>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
+export const LandingPage = () => {
+  useDocumentTitle(null);
+  const { isAuthenticated, user } = useAuth();
+  const [health, setHealth] = useState(null);
 
-          {/* Right Column: Editorial Cockpit Simulator */}
-          <div className="lg:col-span-5">
-            <div className="rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-paper overflow-hidden">
-              {/* Cockpit Window Header */}
-              <div className="flex items-center justify-between px-4 py-3 bg-[#F0ECE4] dark:bg-[#24201C] border-b border-[#DED9D0] dark:border-[#332F2A] font-mono text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#DED9D0] dark:bg-[#332F2A]" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#DED9D0] dark:bg-[#332F2A]" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#DED9D0] dark:bg-[#332F2A]" />
-                  </div>
-                  <span className="text-[#68645E] dark:text-[#9E988F] ml-2">session_viva_dossier.edu</span>
-                </div>
-                <span className="px-2 py-0.5 rounded-[6px] bg-[#EFF5F1] text-[#3F6B52] dark:bg-[#3F6B52]/20 dark:text-[#88BA9D] text-[10px] font-semibold border border-[#C2D9CB] dark:border-[#3F6B52]/40">
-                  DEFENSE RECORD
-                </span>
-              </div>
+  useEffect(() => {
+    api.get('/health').then(setHealth).catch(() => setHealth(null));
+  }, []);
 
-              {/* Cockpit Tabs */}
-              <div className="flex border-b border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210] px-4 pt-2.5 gap-3 text-xs font-mono">
-                <button
-                  onClick={() => setActiveTab('rubric')}
-                  className={`pb-2 px-2 border-b-2 font-medium transition-colors ${
-                    activeTab === 'rubric'
-                      ? 'border-[#7A263A] text-[#7A263A] dark:border-[#D4AA6A] dark:text-[#D4AA6A] font-semibold'
-                      : 'border-transparent text-[#68645E] hover:text-[#171717] dark:text-[#9E988F] dark:hover:text-[#F7F4EE]'
-                  }`}
-                >
-                  Rubric Scoring
-                </button>
-                <button
-                  onClick={() => setActiveTab('prompt')}
-                  className={`pb-2 px-2 border-b-2 font-medium transition-colors ${
-                    activeTab === 'prompt'
-                      ? 'border-[#7A263A] text-[#7A263A] dark:border-[#D4AA6A] dark:text-[#D4AA6A] font-semibold'
-                      : 'border-transparent text-[#68645E] hover:text-[#171717] dark:text-[#9E988F] dark:hover:text-[#F7F4EE]'
-                  }`}
-                >
-                  Question & Code
-                </button>
-                <button
-                  onClick={() => setActiveTab('proctor')}
-                  className={`pb-2 px-2 border-b-2 font-medium transition-colors ${
-                    activeTab === 'proctor'
-                      ? 'border-[#7A263A] text-[#7A263A] dark:border-[#D4AA6A] dark:text-[#D4AA6A] font-semibold'
-                      : 'border-transparent text-[#68645E] hover:text-[#171717] dark:text-[#9E988F] dark:hover:text-[#F7F4EE]'
-                  }`}
-                >
-                  Proctoring Audit
-                </button>
-              </div>
+  const primaryCta = isAuthenticated
+    ? { to: '/interviews/new', label: 'Start a new interview' }
+    : { to: '/register', label: 'Start practicing — free' };
 
-              {/* Tab Contents */}
-              <div className="p-5 text-sm space-y-4">
-                {activeTab === 'rubric' && (
-                  <div className="space-y-3.5 font-mono">
-                    <div className="flex items-center justify-between pb-2.5 border-b border-[#DED9D0] dark:border-[#332F2A]">
-                      <span className="text-xs text-[#68645E] dark:text-[#9E988F]">EXAMINATION SCORE</span>
-                      <span className="text-2xl font-bold font-serif text-[#7A263A] dark:text-[#D4AA6A]">88 / 100</span>
-                    </div>
-
-                    <div className="space-y-3 text-xs">
-                      <div>
-                        <div className="flex justify-between text-[#171717] dark:text-[#F7F4EE] mb-1 font-medium">
-                          <span>Technical Correctness (40%)</span>
-                          <span className="font-semibold text-[#3F6B52]">36 / 40</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-                          <div className="w-[90%] h-full bg-[#3F6B52]" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-[#171717] dark:text-[#F7F4EE] mb-1 font-medium">
-                          <span>Question Relevance (20%)</span>
-                          <span className="font-semibold text-[#C59A5B]">18 / 20</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-                          <div className="w-[90%] h-full bg-[#C59A5B]" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-[#171717] dark:text-[#F7F4EE] mb-1 font-medium">
-                          <span>Completeness (20%)</span>
-                          <span className="font-semibold text-[#A66A24]">16 / 20</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-                          <div className="w-[80%] h-full bg-[#A66A24]" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-[#171717] dark:text-[#F7F4EE] mb-1 font-medium">
-                          <span>Communication Clarity (20%)</span>
-                          <span className="font-semibold text-[#3F6B52]">18 / 20</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#F0ECE4] dark:bg-[#24201C] overflow-hidden">
-                          <div className="w-[90%] h-full bg-[#3F6B52]" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A] text-[11px] text-[#68645E] dark:text-[#9E988F] leading-relaxed">
-                      <span className="font-semibold text-[#7A263A] dark:text-[#D4AA6A]">EVALUATOR SYNTHESIS:</span> Articulated B+ Tree root/leaf page branching factor with O(log N) disk seek bounds. Clarified cache-aside TTL invalidation.
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'prompt' && (
-                  <div className="space-y-3.5">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="brand">DATABASE MANAGEMENT</Badge>
-                      <Badge variant="warning">HARD TIER</Badge>
-                    </div>
-                    <p className="text-sm font-serif italic text-[#171717] dark:text-[#F7F4EE] leading-relaxed">
-                      "Explain how database index structures reduce disk seek operations, and analyze the concrete trade-offs on write amplification."
-                    </p>
-                    <div className="p-3.5 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] font-mono text-xs border border-[#DED9D0] dark:border-[#332F2A]">
-                      <span className="text-[#68645E] dark:text-[#9E988F]">// Evaluation Criteria Reference</span><br />
-                      <span className="text-[#7A263A] dark:text-[#D4AA6A]">const</span> rubricCriteria = &#123;<br />
-                      &nbsp;&nbsp;btree_traversal: <span className="text-[#3F6B52]">"verified"</span>,<br />
-                      &nbsp;&nbsp;disk_io_penalty: <span className="text-[#3F6B52]">"addressed"</span>,<br />
-                      &nbsp;&nbsp;write_overhead: <span className="text-[#3F6B52]">"quantified"</span><br />
-                      &#125;;
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'proctor' && (
-                  <div className="space-y-3 font-mono text-xs">
-                    <div className="p-3.5 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A] space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#68645E] dark:text-[#9E988F]">CONTINUOUS CAMERA ACCESS:</span>
-                        <span className="text-[#3F6B52] font-semibold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> STREAM PERSISTENT
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#68645E] dark:text-[#9E988F]">FULLSCREEN ENFORCEMENT:</span>
-                        <span className="text-[#171717] dark:text-[#F7F4EE] font-semibold">STRICT ACTIVE</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#68645E] dark:text-[#9E988F]">SECURITY VIOLATIONS:</span>
-                        <span className="text-[#3F6B52] font-semibold">0 RECORDED</span>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#68645E] dark:text-[#9E988F] leading-normal">
-                      Full-screen exit immediately terminates the examination and generates a proctoring audit log for the evaluators.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Cockpit Footer */}
-              <div className="px-4 py-2.5 bg-[#F0ECE4] dark:bg-[#24201C] border-t border-[#DED9D0] dark:border-[#332F2A] flex items-center justify-between text-[11px] font-mono text-[#68645E] dark:text-[#9E988F]">
-                <span>SESSION #MV-2026-VIVA</span>
-                <span className="text-[#3F6B52] font-semibold">VERIFIED VALID</span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* Asymmetric Bento Grid Section: Architecture & Capabilities */}
-      <section id="architecture" className="py-20 md:py-28 border-t border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="max-w-3xl mb-14">
-            <span className="font-mono text-xs text-[#7A263A] dark:text-[#D4AA6A] uppercase tracking-wider font-semibold">
-              ACADEMIC ARCHITECTURE
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE] mt-1.5">
-              Engineered for Realistic Technical Evaluation.
-            </h2>
-            <p className="text-sm sm:text-base text-[#68645E] dark:text-[#9E988F] mt-3 leading-relaxed">
-              Every component adheres to university Viva examination standards, real-time rubric evaluation protocols, and complete data integrity.
-            </p>
-          </div>
-
-          {/* Asymmetric Bento Layout */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            
-            {/* Bento Card 1: 7 cols - Semantic Rubric Engine */}
-            <div className="md:col-span-7 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210] p-6 sm:p-8 flex flex-col justify-between shadow-paper">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-10 h-10 rounded-[8px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] flex items-center justify-center border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                    <Scale className="w-5 h-5" />
-                  </div>
-                  <span className="font-mono text-xs text-[#68645E] dark:text-[#9E988F]">SPEC: 40/20/20/20</span>
-                </div>
-                <h3 className="text-xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-2">
-                  Calibrated Viva Rubric Engine
-                </h3>
-                <p className="text-sm text-[#68645E] dark:text-[#9E988F] leading-relaxed mb-6">
-                  Rather than generic keyword matching, MockVue parses technical answers across four weighted dimensions. Responses receive targeted diagnostic feedback, edge-case analysis, and study notes.
-                </p>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs text-center">
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">40%</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-0.5">TECHNICAL</div>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">20%</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-0.5">RELEVANCE</div>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">20%</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-0.5">COMPLETION</div>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">20%</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-0.5">CLARITY</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-[#DED9D0] dark:border-[#332F2A] flex items-center justify-between text-xs font-mono text-[#68645E] dark:text-[#9E988F]">
-                <span>MODEL EVALUATION AUDIT</span>
-                <span className="text-[#7A263A] dark:text-[#D4AA6A] font-semibold">STRICT SCHEMA ENFORCEMENT</span>
-              </div>
-            </div>
-
-            {/* Bento Card 2: 5 cols - Anti-Cheat & Client Privacy */}
-            <div className="md:col-span-5 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210] p-6 sm:p-8 flex flex-col justify-between shadow-paper">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-10 h-10 rounded-[8px] bg-[#EFF5F1] dark:bg-[#3F6B52]/20 text-[#3F6B52] dark:text-[#88BA9D] flex items-center justify-center border border-[#C2D9CB] dark:border-[#3F6B52]/40">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <span className="font-mono text-xs text-[#3F6B52] dark:text-[#88BA9D] font-semibold">ALL-TIME CAMERA</span>
-                </div>
-                <h3 className="text-xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-2">
-                  Continuous Proctoring & Fullscreen Defense
-                </h3>
-                <p className="text-sm text-[#68645E] dark:text-[#9E988F] leading-relaxed mb-4">
-                  Examinations require unbroken camera streams and strictly gate progress behind browser full-screen locks. Any exit immediately concludes the viva.
-                </p>
-                <div className="p-3.5 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] space-y-2 font-mono text-xs">
-                  <div className="flex items-center gap-2 text-[#171717] dark:text-[#F7F4EE]">
-                    <Check className="w-3.5 h-3.5 text-[#3F6B52]" />
-                    <span>Unbroken camera track verification</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[#171717] dark:text-[#F7F4EE]">
-                    <Check className="w-3.5 h-3.5 text-[#3F6B52]" />
-                    <span>Instant termination upon fullscreen exit</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[#171717] dark:text-[#F7F4EE]">
-                    <Check className="w-3.5 h-3.5 text-[#3F6B52]" />
-                    <span>Audit violations persisted to database</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-[#DED9D0] dark:border-[#332F2A] text-xs font-mono text-[#68645E] dark:text-[#9E988F]">
-                <span>AUDIT-SAFE FOR UNIVERSITY VIVA DEFENSE</span>
-              </div>
-            </div>
-
-            {/* Bento Card 3: 5 cols - Dual Speech & Code Mode */}
-            <div className="md:col-span-5 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210] p-6 sm:p-8 flex flex-col justify-between shadow-paper">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-10 h-10 rounded-[8px] bg-[#FBF6EE] dark:bg-[#C59A5B]/20 text-[#8C642A] dark:text-[#E8CDA0] flex items-center justify-center border border-[#E8D5B8] dark:border-[#C59A5B]/40">
-                    <Mic className="w-5 h-5" />
-                  </div>
-                  <span className="font-mono text-xs text-[#68645E] dark:text-[#9E988F]">DUAL INPUT CHANNELS</span>
-                </div>
-                <h3 className="text-xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-2">
-                  Natural Speech & Code Submission
-                </h3>
-                <p className="text-sm text-[#68645E] dark:text-[#9E988F] leading-relaxed mb-4">
-                  Candidates can articulate architectural reasoning via real-time speech transcription or type structured algorithms and pseudocode in the monospace answer console.
-                </p>
-                <div className="p-3.5 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] font-mono text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#3F6B52]" />
-                    <span className="text-[#171717] dark:text-[#F7F4EE]">Speech Recognition Engine</span>
-                  </div>
-                  <span className="text-[#68645E] dark:text-[#9E988F]">CLIENT BROWSER</span>
-                </div>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-[#DED9D0] dark:border-[#332F2A] text-xs font-mono text-[#68645E] dark:text-[#9E988F]">
-                <span>SUPPORTS TECHNICAL EXPLANATION & CODING</span>
-              </div>
-            </div>
-
-            {/* Bento Card 4: 7 cols - Dossier & Faculty Export */}
-            <div className="md:col-span-7 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210] p-6 sm:p-8 flex flex-col justify-between shadow-paper">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-10 h-10 rounded-[8px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] flex items-center justify-center border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                    <BookOpen className="w-5 h-5" />
-                  </div>
-                  <span className="font-mono text-xs text-[#68645E] dark:text-[#9E988F]">COMPREHENSIVE DOSSIER</span>
-                </div>
-                <h3 className="text-xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-2">
-                  Academic Viva Transcript & Rubric Breakdown
-                </h3>
-                <p className="text-sm text-[#68645E] dark:text-[#9E988F] leading-relaxed mb-4">
-                  Upon completion, candidates and evaluators receive a detailed viva report featuring radar competency diagrams, identified mistakes, and improved model answers.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="font-bold text-[#171717] dark:text-[#F7F4EE]">Mistake Analysis</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-1">Pinpoints misconceptions</div>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="font-bold text-[#171717] dark:text-[#F7F4EE]">Model Answer</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-1">Gold-standard synthesis</div>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A]">
-                    <div className="font-bold text-[#171717] dark:text-[#F7F4EE]">Radar Metrics</div>
-                    <div className="text-[10px] text-[#68645E] dark:text-[#9E988F] mt-1">Multi-axis placement radar</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-[#DED9D0] dark:border-[#332F2A] flex items-center justify-between text-xs font-mono text-[#68645E] dark:text-[#9E988F]">
-                <span>EVALUATION ARCHIVE</span>
-                <span className="text-[#3F6B52] font-semibold">100% AUDIT READY</span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Institutional Call To Action */}
-      <section className="py-20 md:py-28 border-t border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#141210]">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
-          <span className="font-mono text-xs uppercase tracking-wider text-[#7A263A] dark:text-[#D4AA6A] font-semibold">
-            CALIBRATED ASSESSMENT ENVIRONMENT
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE]">
-            Prepare for Technical Placements with True Academic Rigor.
-          </h2>
-          <p className="text-base text-[#68645E] dark:text-[#9E988F] max-w-2xl mx-auto leading-relaxed">
-            Eliminate the guesswork of campus placement interviews. Practice with real question sequences, enforced full-screen defense, and faculty-grade evaluation.
+  return (
+    <div className="overflow-x-clip">
+      {/* Hero */}
+      <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 md:pt-20 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:px-8 lg:pb-24">
+        <div className="animate-slide-up">
+          <Badge tone="accent" dot>
+            For campus placements and technical rounds
+          </Badge>
+          <h1 className="display mt-5 text-[2.6rem] leading-[1.05] sm:text-6xl lg:text-[4.1rem]">
+            Rehearse the interview <span className="italic text-accent-ink">before</span> it counts.
+          </h1>
+          <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-2">
+            Answer real technical and HR questions by typing or speaking. Every answer is scored on a four-part rubric with a
+            model answer to compare against — and the session is proctored by computer vision that runs entirely in your browser.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-            <Link to="/register">
-              <Button size="lg" icon={ArrowRight}>
-                Register Candidate Account
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button as={Link} to={primaryCta.to} size="lg" iconRight={ArrowRight}>
+              {primaryCta.label}
+            </Button>
+            {isAuthenticated ? (
+              <Button as={Link} to="/dashboard" size="lg" variant="secondary">
+                Back to dashboard{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
               </Button>
-            </Link>
-            <Link to="/login">
-              <Button variant="outline" size="lg">
-                Access Existing Dossier
+            ) : (
+              <Button as={Link} to="/#how-it-works" size="lg" variant="secondary">
+                See how it works
               </Button>
-            </Link>
+            )}
+          </div>
+          <dl className="mt-10 grid max-w-lg grid-cols-3 gap-4 border-t border-line pt-6">
+            {[
+              ['13', 'topics, Easy to Hard'],
+              ['4', 'rubric criteria per answer'],
+              ['0', 'video frames uploaded'],
+            ].map(([n, label]) => (
+              <div key={label}>
+                <dt className="sr-only">{label}</dt>
+                <dd>
+                  <span className="num block text-2xl font-semibold text-ink">{n}</span>
+                  <span className="mt-0.5 block text-sm text-ink-3">{label}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {health?.ai && (
+            <p className="mt-6 inline-flex items-center gap-2 text-xs text-ink-3">
+              <span className={`h-1.5 w-1.5 rounded-full ${health.success ? 'bg-success' : 'bg-warning'}`} aria-hidden="true" />
+              Grading engine: {PROVIDER_LABEL[health.ai.configuredProvider] || health.ai.configuredProvider}
+              {health.ai.configuredProvider !== 'fallback' && !health.ai.hasApiKey ? ' (no API key — offline rubric in use)' : ''}
+            </p>
+          )}
+        </div>
+        <div className="animate-fade-in lg:pl-4">
+          <ProductPreview />
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section id="how-it-works" className="scroll-mt-20 border-y border-line bg-surface">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+          <div className="max-w-2xl">
+            <p className="eyebrow">How it works</p>
+            <h2 className="display mt-2 text-3xl sm:text-4xl">From blank page to a scored mock interview in a minute.</h2>
+          </div>
+          <ol className="mt-12 grid gap-10 md:grid-cols-3 md:gap-8">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="relative">
+                <div className="flex items-center gap-3">
+                  <span className="num flex h-9 w-9 items-center justify-center rounded-full border border-line-strong bg-canvas text-sm font-semibold text-ink">
+                    {i + 1}
+                  </span>
+                  {i < STEPS.length - 1 && <span className="hidden h-px flex-1 bg-line-strong md:block" aria-hidden="true" />}
+                </div>
+                <h3 className="mt-5 flex items-center gap-2 text-lg font-semibold text-ink">
+                  <s.icon className="h-5 w-5 text-accent-ink" aria-hidden="true" />
+                  {s.title}
+                </h3>
+                <p className="mt-2 text-[15px] leading-relaxed text-ink-2">{s.body}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* Rubric */}
+      <section className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:px-8 lg:py-24">
+        <div>
+          <p className="eyebrow">Scoring</p>
+          <h2 className="display mt-2 text-3xl sm:text-4xl">Graded like an interviewer would, not by word count.</h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-ink-2">
+            Each answer is scored out of 100 across four criteria. You see which concepts you covered, what you missed, specific
+            gaps, and a model answer. With an AI key configured, grading is semantic; without one, an offline rubric engine checks
+            concept coverage, structure and depth — and can’t be fooled by padding or gibberish.
+          </p>
+          <ul className="mt-6 space-y-2.5 text-[15px] text-ink-2">
+            {['Concepts covered vs. missed', 'Actionable feedback for the next attempt', 'Model answer or answer outline', 'Progress by topic and criterion'].map(
+              (t) => (
+                <li key={t} className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" /> {t}
+                </li>
+              )
+            )}
+          </ul>
+        </div>
+        <div className="card p-6 sm:p-8">
+          <p className="text-sm font-medium text-ink">Rubric weights</p>
+          <div className="mt-3 flex h-7 w-full gap-0.5 overflow-hidden rounded-md" role="img" aria-label="Technical 40%, Relevance 20%, Completeness 20%, Clarity 20%">
+            {RUBRIC.map((r, i) => (
+              <div
+                key={r.key}
+                className={`flex items-center truncate px-2 text-xs font-semibold ${
+                  ['bg-accent text-white', 'bg-accent/80 text-white', 'bg-accent/45 text-ink', 'bg-accent/30 text-ink'][i]
+                }`}
+                style={{ width: `${r.max}%` }}
+              >
+                {r.short} {r.max}%
+              </div>
+            ))}
+          </div>
+          <dl className="mt-6 divide-y divide-line">
+            {RUBRIC.map((r) => (
+              <div key={r.key} className="flex items-start justify-between gap-4 py-3">
+                <div>
+                  <dt className="text-sm font-semibold text-ink">{r.label}</dt>
+                  <dd className="mt-0.5 text-sm text-ink-3">{r.desc}</dd>
+                </div>
+                <span className="num shrink-0 text-sm font-semibold text-ink-2">{r.max} pts</span>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      {/* Proctoring */}
+      <section id="proctoring" className="scroll-mt-20 border-y border-line bg-surface">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="eyebrow">Computer-vision proctoring</p>
+            <h2 className="display mt-2 text-3xl sm:text-4xl">Real exam conditions, measured fairly.</h2>
+            <p className="mt-4 text-[15px] leading-relaxed text-ink-2">
+              MediaPipe face-landmark and object-detection models run on your device at up to 15 frames per second. Before you start,
+              a short calibration learns how you naturally sit, so an off-centre webcam doesn’t count against you.
+            </p>
+          </div>
+          <div className="mt-12 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+            <div className="card grid gap-px overflow-hidden bg-line p-0 sm:grid-cols-2">
+              {VISION_CHECKS.map((c, i) => (
+                <div key={c.title} className={`bg-surface p-5 ${i === VISION_CHECKS.length - 1 ? 'sm:col-span-2' : ''}`}>
+                  <c.icon className="h-5 w-5 text-accent-ink" aria-hidden="true" />
+                  <h3 className="mt-3 text-[15px] font-semibold text-ink">{c.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-3">{c.body}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col gap-6">
+              <div className="card p-5">
+                <h3 className="text-[15px] font-semibold text-ink">Browser rules</h3>
+                <ul className="mt-3 space-y-3">
+                  {BROWSER_RULES.map((r) => (
+                    <li key={r.text} className="flex gap-3 text-sm text-ink-2">
+                      <r.icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+                      {r.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="card p-5">
+                <h3 className="text-[15px] font-semibold text-ink">Fair by design</h3>
+                <ul className="mt-3 space-y-2.5">
+                  {FAIRNESS.map((t) => (
+                    <li key={t} className="flex gap-2.5 text-sm text-ink-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Privacy */}
+      <section id="privacy" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-start">
+          <div>
+            <p className="eyebrow">Privacy</p>
+            <h2 className="display mt-2 text-3xl sm:text-4xl">Your camera stays on your device.</h2>
+            <p className="mt-4 text-[15px] leading-relaxed text-ink-2">
+              Frames are analysed in memory and discarded immediately. No images, video or audio recordings are stored or sent
+              anywhere — only a short log of proctoring events.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="card p-5">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" /> Sent to the server
+              </h3>
+              <ul className="mt-3 space-y-2 text-sm text-ink-2">
+                <li>Event type and time (e.g. “looked away, 5 s”)</li>
+                <li>A few numbers, like head angle or face count</li>
+                <li>Session summary: % time present and attentive</li>
+                <li>Your typed or dictated answers</li>
+              </ul>
+            </div>
+            <div className="card p-5">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Lock className="h-4 w-4 text-accent-ink" aria-hidden="true" /> Never leaves your browser
+              </h3>
+              <ul className="mt-3 space-y-2 text-sm text-ink-2">
+                <li>Camera frames or snapshots</li>
+                <li>Face landmarks or biometric templates</li>
+                <li>Microphone audio (only a loudness level is used)</li>
+                <li>Anything after the session ends</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Topics + CTA */}
+      <section className="border-t border-line bg-surface">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+          <div className="flex flex-col gap-10 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <h2 className="display text-3xl sm:text-4xl">Thirteen topics, three difficulty tiers.</h2>
+              <ul className="mt-6 flex flex-wrap gap-2" aria-label="Available topics">
+                {TOPICS.map((t) => (
+                  <li key={t} className="rounded-full border border-line bg-canvas px-3 py-1 text-sm text-ink-2">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex shrink-0 flex-col gap-3 lg:items-end">
+              <div className="flex items-center gap-3 text-sm text-ink-2">
+                <BookOpenCheck className="h-5 w-5 text-accent-ink" aria-hidden="true" /> Behavioral questions use the STAR method.
+              </div>
+              <div className="flex items-center gap-3 text-sm text-ink-2">
+                <Mic className="h-5 w-5 text-accent-ink" aria-hidden="true" /> Speak your answers with built-in dictation.
+              </div>
+              <Button as={Link} to={primaryCta.to} size="lg" iconRight={ArrowRight} className="mt-3">
+                {primaryCta.label}
+              </Button>
+            </div>
           </div>
         </div>
       </section>
     </div>
   );
 };
+
+export default LandingPage;

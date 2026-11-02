@@ -1,142 +1,179 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  History, 
-  Calendar, 
-  ChevronRight, 
-  AlertCircle,
-  Plus,
-  BookOpen
-} from 'lucide-react';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import { Plus, Search, Trash2, FileText, PlayCircle, ChevronRight, History } from 'lucide-react';
+import { useAsync, useDocumentTitle } from '../hooks/useAsync';
+import { useToast } from '../context/ToastContext';
+import { Button, IconButton } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { Spinner } from '../components/ui/Spinner';
+import { Card } from '../components/ui/Card';
+import { Input } from '../components/ui/Field';
+import { ScorePill } from '../components/ui/Metrics';
+import { ConfirmDialog } from '../components/ui/Dialog';
+import { EmptyState, ErrorState, Skeleton } from '../components/ui/Feedback';
+import { PageContainer, PageHeader } from '../components/layout/PageHeader';
+import { TOPIC_SHORT } from '../lib/constants';
+import { formatDate, STATUS_META, END_REASON_LABEL } from '../lib/format';
 import api from '../services/api';
 
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'finished', label: 'Finished', match: (i) => ['completed', 'terminated'].includes(i.status) },
+  { id: 'active', label: 'Not finished', match: (i) => ['created', 'in_progress'].includes(i.status) },
+  { id: 'terminated', label: 'Ended early', match: (i) => i.status === 'terminated' },
+];
+
 export const HistoryPage = () => {
-  const [interviews, setInterviews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  useDocumentTitle('Interviews');
+  const toast = useToast();
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [toDelete, setToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    api.get('/interviews/history')
-      .then((res) => {
-        setInterviews(res.interviews || []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to fetch interview history.');
-        setLoading(false);
-      });
-  }, []);
+  const { data, loading, error, reload, setData } = useAsync(async () => (await api.get('/interviews/history')).interviews, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center">
-        <Spinner size="lg" label="Retrieving Examination Archives..." />
-      </div>
+  const rows = useMemo(() => {
+    const f = FILTERS.find((x) => x.id === filter);
+    const q = query.trim().toLowerCase();
+    return (data || []).filter(
+      (i) =>
+        (!f?.match || f.match(i)) &&
+        (!q || i.title.toLowerCase().includes(q) || i.topics?.some((t) => t.toLowerCase().includes(q)))
     );
-  }
+  }, [data, filter, query]);
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/interviews/${toDelete._id}`);
+      setData((data || []).filter((i) => i._id !== toDelete._id));
+      toast.success('Interview deleted.');
+      setToDelete(null);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in font-sans">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#DED9D0] dark:border-[#332F2A]">
-        <div>
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-            ARCHIVAL RECORDS
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-            Assessment History & Transcripts
-          </h1>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5 font-mono">
-            VERIFIED LONGITUDINAL LOG OF SESSIONS & RUBRIC OUTCOMES
-          </p>
-        </div>
-        <Link to="/interviews/new">
-          <Button icon={Plus} size="md">
-            New Assessment
+    <PageContainer size="lg">
+      <PageHeader
+        eyebrow="Interviews"
+        title="All interviews"
+        description="Every session you’ve created, with scores and reports."
+        actions={
+          <Button as={Link} to="/interviews/new" icon={Plus}>
+            New interview
           </Button>
-        </Link>
+        }
+      />
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-1 overflow-x-auto rounded-xl bg-surface-2 p-1 scrollbar-none" role="tablist" aria-label="Filter interviews">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === f.id}
+              onClick={() => setFilter(f.id)}
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                filter === f.id ? 'bg-surface text-ink shadow-card' : 'text-ink-3 hover:text-ink'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="sm:w-64">
+          <Input icon={Search} placeholder="Search by title or topic" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search interviews" />
+        </div>
       </div>
 
-      {error && (
-        <div className="p-3 rounded-lg bg-[#FAF0F0] dark:bg-[#A33B3B]/20 border border-[#E8C4C4] dark:border-[#A33B3B]/40 flex items-center gap-2 text-xs text-[#A33B3B] dark:text-[#E59797] font-mono">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+      {error ? (
+        <ErrorState message={error.message} onRetry={reload} />
+      ) : loading ? (
+        <div className="card divide-y divide-line">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-4 p-5">
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+              <Skeleton className="h-6 w-12" />
+            </div>
+          ))}
         </div>
-      )}
-
-      {interviews.length === 0 ? (
-        <Card className="p-10 text-center max-w-md mx-auto shadow-paper">
-          <div className="w-10 h-10 rounded-lg bg-[#F0ECE4] dark:bg-[#24201C] text-[#68645E] dark:text-[#9E988F] flex items-center justify-center mx-auto mb-3 border border-[#DED9D0] dark:border-[#332F2A]">
-            <History className="w-5 h-5 text-[#7A263A] dark:text-[#D4AA6A]" />
-          </div>
-          <h2 className="text-sm font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">No Past Assessments Recorded</h2>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-5">
-            Complete your first mock interview to establish your historical performance profile.
-          </p>
-          <Link to="/interviews/new">
-            <Button size="sm" icon={Plus}>Start First Assessment</Button>
-          </Link>
+      ) : (data || []).length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={History}
+            title="No interviews yet"
+            description="Your interviews and reports will be listed here."
+            action={
+              <Button as={Link} to="/interviews/new" icon={Plus}>
+                Create your first interview
+              </Button>
+            }
+          />
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card>
+          <EmptyState icon={Search} title="No matches" description="Try a different filter or search term." />
         </Card>
       ) : (
-        <div className="space-y-3">
-          {interviews.map((item) => {
-            const isCompleted = item.status === 'completed';
-            const score = item.overallScore || 0;
-
-            return (
-              <Card key={item._id} hover className="p-4 sm:p-5 shadow-paper">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2 font-mono">
-                      <Badge variant={isCompleted ? 'success' : 'neutral'} size="sm" dot>
-                        {item.status.replace('_', ' ').toUpperCase()}
-                      </Badge>
-                      <Badge variant="brand" size="sm">{item.difficulty?.toUpperCase()}</Badge>
-                      <span className="text-[11px] text-[#68645E] dark:text-[#9E988F] flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(item.createdAt).toLocaleDateString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    </div>
-
-                    <h3 className="text-sm sm:text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-                      {item.title}
-                    </h3>
-
-                    <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">
-                      Role: {item.targetRole} • Topics: {item.topics?.join(', ')} • {item.questions?.length} Questions
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-end border-t sm:border-t-0 pt-2.5 sm:pt-0 border-[#DED9D0] dark:border-[#332F2A]">
-                    {isCompleted && (
-                      <div className="text-right font-mono">
-                        <span className="text-[10px] text-[#68645E] dark:text-[#9E988F] block uppercase">Rubric Score</span>
-                        <span className="text-lg font-bold text-[#7A263A] dark:text-[#D4AA6A]">
-                          {score}%
-                        </span>
+        <Card padded={false}>
+          <ul className="divide-y divide-line">
+            {rows.map((item) => {
+              const meta = STATUS_META[item.status] || STATUS_META.created;
+              const finished = ['completed', 'terminated'].includes(item.status);
+              const to = finished ? `/interviews/${item._id}/results` : `/interviews/${item._id}/${item.status === 'in_progress' ? 'room' : 'prep'}`;
+              return (
+                <li key={item._id} className="flex items-center gap-2 pr-3 hover:bg-surface-2/50">
+                  <Link to={to} className="flex min-w-0 flex-1 items-center gap-4 py-4 pl-5 sm:pl-6">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="line-clamp-2 text-sm font-semibold text-ink">{item.title}</p>
+                        <Badge tone={meta.tone} size="sm" dot>
+                          {meta.label}
+                        </Badge>
                       </div>
-                    )}
-
-                    <Link to={isCompleted ? `/interviews/${item._id}/results` : `/interviews/${item._id}/prep`}>
-                      <Button variant={isCompleted ? 'outline' : 'primary'} size="sm" icon={ChevronRight}>
-                        {isCompleted ? 'View Dossier' : 'Resume'}
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                      <p className="mt-1 truncate text-xs text-ink-3">
+                        {formatDate(item.completedAt || item.createdAt)} · {item.topics?.map((t) => TOPIC_SHORT[t] || t).join(', ')} · {item.answeredCount}/{item.questionCount} answered
+                        {item.endReason && item.endReason !== 'all_answered' && item.status === 'completed' ? ` · ${END_REASON_LABEL[item.endReason]}` : ''}
+                      </p>
+                    </div>
+                    <span className="w-12 text-right">
+                      {finished ? (
+                        <ScorePill score={item.overallScore} />
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-ink">
+                          <PlayCircle className="h-4 w-4" aria-hidden="true" /> {item.status === 'in_progress' ? 'Resume' : 'Start'}
+                        </span>
+                      )}
+                    </span>
+                    {finished ? <FileText className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />}
+                  </Link>
+                  <IconButton label={`Delete ${item.title}`} icon={Trash2} onClick={() => setToDelete(item)} className="shrink-0 hover:text-danger" />
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
       )}
-    </div>
+
+      <ConfirmDialog
+        open={Boolean(toDelete)}
+        onClose={() => setToDelete(null)}
+        onConfirm={confirmDelete}
+        isLoading={deleting}
+        tone="danger"
+        title="Delete this interview?"
+        description={toDelete ? `“${toDelete.title}” and its answers, scores and proctoring log will be permanently deleted.` : ''}
+        confirmLabel="Delete"
+      />
+    </PageContainer>
   );
 };
 

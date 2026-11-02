@@ -1,6 +1,6 @@
 /**
- * Abstract Base Class for AI Providers in MockVue
- * Follows the Strategy Pattern to decouple LLM APIs from business logic.
+ * Base class for AI providers (Strategy pattern). Business logic depends only
+ * on this interface, so providers can be swapped without touching controllers.
  */
 export class AIProvider {
   constructor(name) {
@@ -8,30 +8,26 @@ export class AIProvider {
   }
 
   /**
-   * Generates a structured list of interview questions.
    * @param {Object} config
    * @param {string} config.targetRole
    * @param {string[]} config.topics
-   * @param {string} config.difficulty - Easy | Medium | Hard
-   * @param {string} config.interviewType - Technical | HR | Behavioral | Mixed
-   * @param {string} config.experienceLevel - Entry-Level | Junior | Mid-Level | Senior
-   * @param {number} config.questionCount - Total questions to generate
+   * @param {'Easy'|'Medium'|'Hard'} config.difficulty
+   * @param {'Technical'|'HR'|'Behavioral'|'Mixed'} config.interviewType
+   * @param {string} config.experienceLevel
+   * @param {number} config.questionCount
    * @returns {Promise<{ questions: Array, provider: string, isFallback: boolean }>}
    */
-  async generateQuestions(config) {
-    throw new Error('generateQuestions() must be implemented by concrete AI provider');
+  // eslint-disable-next-line no-unused-vars
+  async generateQuestions(config, options) {
+    throw new Error('generateQuestions() must be implemented by a concrete AI provider');
   }
 
   /**
-   * Evaluates a candidate's answer against reference criteria.
-   * @param {Object} data
-   * @param {string} data.questionText
-   * @param {string[]} data.referenceConcepts
-   * @param {string[]} data.evaluationCriteria
-   * @param {string} data.candidateAnswer
-   * @returns {Promise<{ overallScore: number, criteriaScores: Object, feedback: string, improvedAnswer: string, isFallback: boolean }>}
+   * Returns a raw evaluation object; AIServiceManager normalizes it.
+   * @param {Object} data - question text, reference concepts, criteria, candidate answer, topic, difficulty, type
    */
-  async evaluateAnswer(data) {
-    throw new Error('evaluateAnswer() must be implemented by concrete AI provider');
+  // eslint-disable-next-line no-unused-vars
+  async evaluateAnswer(data, options) {
+    throw new Error('evaluateAnswer() must be implemented by a concrete AI provider');
   }
 }

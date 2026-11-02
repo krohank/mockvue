@@ -3,6 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { env } from './config/env.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
@@ -11,25 +14,50 @@ import interviewRoutes from './routes/interview.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
+const serveClient = env.SERVE_CLIENT && fs.existsSync(path.join(CLIENT_DIST, 'index.html'));
+
 const app = express();
 
-// Security Headers
+if (env.TRUST_PROXY) {
+  app.set('trust proxy', 1);
+}
+app.disable('x-powered-by');
+
+// The SPA needs WebAssembly (MediaPipe), Google Fonts, and the MediaPipe model CDN.
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: serveClient
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://cdn.jsdelivr.net'],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+            fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            mediaSrc: ["'self'", 'blob:', 'mediastream:'],
+            connectSrc: ["'self'", 'https://storage.googleapis.com', 'https://cdn.jsdelivr.net'],
+            workerSrc: ["'self'", 'blob:'],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            // Don't force https sub-requests: breaks LAN/localhost demos served over http.
+            upgradeInsecureRequests: null,
+          },
+        }
+      : false,
   })
 );
 
-// CORS configuration
-const allowedOrigins = [env.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'];
+const allowedOrigins = new Set([env.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173']);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, postman)
-      if (!origin || allowedOrigins.includes(origin) || env.isDev) {
-        return callback(null, true);
-      }
-      return callback(new Error('Blocked by CORS policy'));
+      // Same-origin requests and non-browser clients send no Origin header.
+      if (!origin || allowedOrigins.has(origin) || env.isDev) return callback(null, true);
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -37,48 +65,51 @@ app.use(
   })
 );
 
-// Request Logging
-if (env.isDev) {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
+if (!env.isTest) {
+  app.use(morgan(env.isDev ? 'dev' : 'combined'));
 }
 
-// Global Rate Limiting
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requests per 15 min window
-  standardHeaders: true,
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  // Proctoring telemetry and evaluation calls are frequent during a session.
+  limit: env.isTest ? 10_000 : 600,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many requests from this IP address, please try again after 15 minutes.',
-  },
+  message: { success: false, message: 'Too many requests. Please slow down and try again shortly.' },
 });
-app.use('/api', generalLimiter);
+app.use('/api', apiLimiter);
 
-// Body Parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
-// Base Route
-app.get('/', (req, res) => {
-  res.json({
-    message: 'MockVue API Engine is active.',
-    healthcheck: '/api/health',
-    version: '1.0.0',
-    documentation: 'https://github.com/mockvue',
-  });
-});
-
-// Mount Routes
 app.use('/api', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Fallthrough 404 & Centralized Error Handler
+if (serveClient) {
+  app.use(
+    express.static(CLIENT_DIST, {
+      index: false,
+      maxAge: '7d',
+      setHeaders: (res, filePath) => {
+        // Hashed assets can be cached aggressively; HTML must revalidate.
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      },
+    })
+  );
+  // SPA fallback for client-side routes.
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(CLIENT_DIST, 'index.html'));
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.json({ message: 'MockVue API is running.', healthcheck: '/api/health', version: '2.0.0' });
+  });
+}
+
 app.use(notFoundHandler);
 app.use(errorHandler);
 

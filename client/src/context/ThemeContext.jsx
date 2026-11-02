@@ -1,39 +1,44 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { local, KEYS } from '../lib/storage';
 
-const ThemeContext = createContext();
+const ThemeContext = createContext(null);
+
+const prefersDark = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('mockvue_theme');
-    if (saved) return saved;
-    return 'light';
-  });
+  const [preference, setPreference] = useState(() => local.get(KEYS.theme, 'system'));
+  const [systemDark, setSystemDark] = useState(prefersDark);
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    localStorage.setItem('mockvue_theme', theme);
-  }, [theme]);
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return undefined;
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
+  const resolved = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
 
-  return (
-    <ThemeContext.Provider value={{ theme, isDark: theme === 'dark', toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    local.set(KEYS.theme, preference);
+  }, [resolved, preference]);
+
+  const toggleTheme = useCallback(() => {
+    setPreference(resolved === 'dark' ? 'light' : 'dark');
+  }, [resolved]);
+
+  const value = useMemo(
+    () => ({ preference, setPreference, theme: resolved, isDark: resolved === 'dark', toggleTheme }),
+    [preference, resolved, toggleTheme]
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
 
 export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
+  return ctx;
 };

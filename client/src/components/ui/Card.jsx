@@ -1,36 +1,24 @@
 import React from 'react';
 
-export const Card = ({
-  children,
-  className = '',
-  hover = false,
-  ...props
-}) => {
-  const cardClass = hover ? 'stitch-card-interactive' : 'stitch-card';
-
-  return (
-    <div className={`${cardClass} p-5 sm:p-6 ${className}`} {...props}>
-      {children}
-    </div>
-  );
-};
-
-export const CardHeader = ({ title, subtitle, action, className = '' }) => (
-  <div className={`flex items-start justify-between pb-3.5 border-b border-[#DED9D0]/80 dark:border-[#332F2A]/80 mb-4 ${className}`}>
-    <div>
-      {title && <h3 className="text-base sm:text-lg font-serif font-semibold tracking-tight text-[#171717] dark:text-[#F7F4EE]">{title}</h3>}
-      {subtitle && <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5">{subtitle}</p>}
-    </div>
-    {action && <div className="shrink-0 ml-4">{action}</div>}
-  </div>
-);
-
-export const CardBody = ({ children, className = '' }) => (
-  <div className={`${className}`}>{children}</div>
-);
-
-export const CardFooter = ({ children, className = '' }) => (
-  <div className={`pt-3.5 mt-4 border-t border-[#DED9D0]/80 dark:border-[#332F2A]/80 flex items-center justify-between ${className}`}>
+export const Card = ({ as: Component = 'div', className = '', interactive = false, padded = true, children, ...props }) => (
+  <Component className={`${interactive ? 'card-interactive' : 'card'} ${padded ? 'p-5 sm:p-6' : ''} ${className}`} {...props}>
     {children}
+  </Component>
+);
+
+export const CardHeader = ({ title, description, action, icon: Icon, className = '', titleAs: Title = 'h2' }) => (
+  <div className={`mb-5 flex items-start justify-between gap-4 ${className}`}>
+    <div className="flex min-w-0 items-start gap-3">
+      {Icon && (
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-ink-2">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+      )}
+      <div className="min-w-0">
+        <Title className="text-base font-semibold text-ink">{title}</Title>
+        {description && <p className="mt-0.5 text-sm text-ink-3">{description}</p>}
+      </div>
+    </div>
+    {action && <div className="shrink-0">{action}</div>}
   </div>
 );

@@ -2,105 +2,204 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ────────────────────────────────────────────────────────────
+   RGB channels so Tailwind opacity modifiers work: bg-accent/10.
+   Light = warm ivory paper with burgundy ink; dark = night study. */
 @layer base {
   :root {
-    --color-bg-base: #F7F4EE;
-    --color-surface: #FFFDF9;
-    --color-surface-muted: #F0ECE4;
-    --color-border: #DED9D0;
-    --color-border-subtle: #E8E3DA;
-    --color-text-main: #171717;
-    --color-text-muted: #68645E;
-    --color-primary: #7A263A;
-    --color-primary-hover: #641F30;
-    --color-brass: #C59A5B;
-    --color-success: #3F6B52;
-    --color-warning: #A66A24;
-    --color-error: #A33B3B;
+    color-scheme: light;
+    --canvas: 247 244 238;
+    --surface: 255 253 249;
+    --surface-2: 241 236 228;
+    --surface-3: 232 226 216;
+    --line: 226 220 210;
+    --line-strong: 205 197 185;
+    --ink: 26 24 22;
+    --ink-2: 88 83 77;
+    --ink-3: 117 111 104;
+    --accent: 122 38 58;
+    --accent-hover: 100 31 48;
+    --accent-ink: 122 38 58;
+    --accent-soft: 248 236 239;
+    --accent-fg: 255 255 255;
+    --brass: 140 100 42;
+    --brass-soft: 251 244 232;
+    --success: 47 107 74;
+    --success-soft: 233 243 237;
+    --success-fg: 255 255 255;
+    --warning: 150 90 18;
+    --warning-soft: 251 241 226;
+    --warning-fg: 255 255 255;
+    --danger: 163 52 52;
+    --danger-soft: 251 235 235;
+    --danger-fg: 255 255 255;
+    --focus: 122 38 58;
+    --shadow: 40 30 20;
   }
 
-  .dark {
-    --color-bg-base: #141210;
-    --color-surface: #1C1916;
-    --color-surface-muted: #24201C;
-    --color-border: #332F2A;
-    --color-border-subtle: #292520;
-    --color-text-main: #F7F4EE;
-    --color-text-muted: #9E988F;
-    --color-primary: #943247;
-    --color-primary-hover: #AA3D55;
-    --color-brass: #D4AA6A;
-    --color-success: #4C8263;
-    --color-warning: #BA7C2F;
-    --color-error: #BA4545;
+  :root.dark {
+    color-scheme: dark;
+    --canvas: 18 16 14;
+    --surface: 27 24 21;
+    --surface-2: 36 32 28;
+    --surface-3: 46 41 36;
+    --line: 51 46 41;
+    --line-strong: 72 65 58;
+    --ink: 243 239 232;
+    --ink-2: 184 177 167;
+    --ink-3: 150 143 133;
+    --accent: 156 56 81;
+    --accent-hover: 176 66 94;
+    --accent-ink: 236 160 178;
+    --accent-soft: 58 29 37;
+    --accent-fg: 255 255 255;
+    --brass: 217 178 111;
+    --brass-soft: 51 40 25;
+    --success: 127 204 160;
+    --success-soft: 22 42 31;
+    --success-fg: 18 16 14;
+    --warning: 231 176 92;
+    --warning-soft: 51 37 17;
+    --warning-fg: 18 16 14;
+    --danger: 240 138 138;
+    --danger-soft: 58 26 26;
+    --danger-fg: 18 16 14;
+    --focus: 236 160 178;
+    --shadow: 0 0 0;
   }
 
   html {
-    scroll-behavior: smooth;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    background-color: var(--color-bg-base);
-    color: var(--color-text-main);
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  /* Refined Architectural Scrollbar */
+  ::selection {
+    background: rgb(var(--accent) / 0.85);
+    color: rgb(var(--accent-fg));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(104, 100, 94, 0.2);
+    background: rgb(var(--ink-3) / 0.25);
     border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(104, 100, 94, 0.35);
+    background: rgb(var(--ink-3) / 0.4);
+    background-clip: padding-box;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer components {
-  /* Warm Ivory Architectural Cards */
-  .stitch-card {
-    @apply bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] rounded-xl shadow-[0_1px_3px_0_rgba(23,23,23,0.04),0_1px_2px_-1px_rgba(23,23,23,0.02)] transition-all duration-150;
+  .card {
+    @apply bg-surface border border-line rounded-2xl shadow-card;
   }
 
-  .stitch-card-interactive {
-    @apply stitch-card hover:border-[#C59A5B]/60 hover:shadow-[0_4px_16px_-2px_rgba(23,23,23,0.06)];
+  .card-interactive {
+    @apply card transition-[border-color,box-shadow,transform] duration-150 hover:border-line-strong hover:shadow-raised;
   }
 
-  /* Legacy alias compatibility */
-  .glass-card {
-    @apply stitch-card;
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.08em] text-ink-3;
   }
 
-  .glass-card-hover {
-    @apply stitch-card-interactive;
+  .display {
+    @apply font-serif font-semibold tracking-tight text-ink;
   }
 
-  /* Editorial Typography */
-  .font-editorial {
-    @apply font-serif text-[#171717] dark:text-[#F7F4EE] tracking-tight;
+  .field-input {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-3
+      transition-colors duration-150 hover:border-line-strong
+      focus:border-accent-ink focus:outline-none focus:ring-2 focus:ring-accent-ink/20
+      disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-3;
   }
 
-  .text-contrast-heading {
-    @apply text-[#171717] dark:text-[#F7F4EE] font-bold tracking-tight;
+  .link {
+    @apply font-medium text-accent-ink underline-offset-4 hover:underline;
   }
 
-  .text-subtle-accent {
-    @apply text-[#7A263A] dark:text-[#D4AA6A] font-medium;
+  /* Tabular sans figures for numbers; JetBrains Mono is reserved for the countdown timer. */
+  .num {
+    @apply font-sans tabular-nums;
+    font-feature-settings: 'tnum' 1, 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  /* Monospace Metric Pill */
-  .mono-metric {
-    @apply font-mono text-xs tracking-tight text-[#68645E] dark:text-[#9E988F] bg-[#F0ECE4] dark:bg-[#24201C] px-2 py-0.5 rounded border border-[#DED9D0] dark:border-[#332F2A];
+  .skeleton {
+    @apply rounded-md bg-surface-3;
+    background-image: linear-gradient(90deg, transparent 0, rgb(var(--surface) / 0.55) 50%, transparent 100%);
+    background-size: 400px 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.4s linear infinite;
   }
+}
 
-  /* Tactile Press Utility */
-  .btn-tactile {
-    @apply active:translate-y-[1px] transition-transform duration-75 select-none;
+@layer utilities {
+  .mirror {
+    transform: scaleX(-1);
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ── Print: reports print cleanly on white paper ───────────────────────────── */
+@media print {
+  :root,
+  :root.dark {
+    --canvas: 255 255 255;
+    --surface: 255 255 255;
+    --surface-2: 246 244 240;
+    --ink: 0 0 0;
+    --ink-2: 60 60 60;
+    --ink-3: 90 90 90;
+    color-scheme: light;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .card {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+  details > *:not(summary) {
+    display: block !important;
   }
 }

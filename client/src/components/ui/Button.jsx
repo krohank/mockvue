@@ -1,54 +1,74 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { Loader2 } from 'lucide-react';
 
-export const Button = ({
-  children,
-  variant = 'primary',
-  size = 'md',
-  isLoading = false,
-  disabled = false,
-  icon: Icon,
-  className = '',
-  ...props
-}) => {
-  // Editorial restrained tactile press styling (10-12px corner radii, subtle shadows)
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-[10px] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-[#F7F4EE] dark:focus:ring-offset-[#141210] focus:ring-[#7A263A] disabled:opacity-50 disabled:cursor-not-allowed select-none active:translate-y-[1px]';
+const BASE =
+  'inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap select-none ' +
+  'transition-[background-color,border-color,color,box-shadow,transform] duration-150 ' +
+  'active:translate-y-px disabled:pointer-events-none disabled:opacity-50 ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas focus-visible:ring-[rgb(var(--focus))]';
 
-  const sizes = {
-    sm: 'px-2.5 py-1.5 text-xs gap-1.5',
-    md: 'px-3.5 py-2 text-sm gap-2',
-    lg: 'px-5 py-2.5 text-sm md:text-base gap-2.5 font-semibold',
-  };
+const SIZES = {
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-10 px-4 text-sm',
+  lg: 'h-12 px-5 text-[15px]',
+  icon: 'h-9 w-9',
+};
 
-  const variants = {
-    primary:
-      'bg-[#7A263A] hover:bg-[#641F30] text-white border border-[#7A263A]/80 shadow-sm',
-    secondary:
-      'bg-[#F0ECE4] hover:bg-[#E8E2D8] dark:bg-[#262320] dark:hover:bg-[#302B26] text-[#171717] dark:text-[#F7F4EE] border border-[#DED9D0] dark:border-[#332F2A] shadow-sm',
-    outline:
-      'bg-transparent border border-[#DED9D0] dark:border-[#332F2A] text-[#171717] dark:text-[#F7F4EE] hover:bg-[#F0ECE4] dark:hover:bg-[#262320]',
-    ghost:
-      'bg-transparent text-[#68645E] dark:text-[#9E988F] hover:bg-[#F0ECE4] dark:hover:bg-[#262320] hover:text-[#171717] dark:hover:text-[#F7F4EE]',
-    brass:
-      'bg-[#C59A5B] hover:bg-[#B38747] text-white border border-[#C59A5B]/80 shadow-sm',
-    danger:
-      'bg-[#A33B3B] hover:bg-[#8F3232] text-white border border-[#A33B3B]/80 shadow-sm',
-    success:
-      'bg-[#3F6B52] hover:bg-[#335742] text-white border border-[#3F6B52]/80 shadow-sm',
-  };
+const VARIANTS = {
+  primary: 'bg-accent text-accent-fg shadow-card shadow-inset hover:bg-accent-hover',
+  secondary: 'bg-surface text-ink border border-line shadow-card hover:border-line-strong hover:bg-surface-2',
+  ghost: 'text-ink-2 hover:bg-surface-2 hover:text-ink',
+  subtle: 'bg-surface-2 text-ink hover:bg-surface-3',
+  danger: 'bg-danger text-danger-fg shadow-card hover:opacity-90',
+  'danger-ghost': 'text-danger hover:bg-danger-soft',
+  success: 'bg-success text-success-fg shadow-card hover:opacity-90',
+};
 
+/**
+ * Polymorphic button. Use `as={Link}` for navigation so we never nest a
+ * <button> inside an <a> (invalid HTML and confusing for screen readers).
+ */
+export const Button = forwardRef(function Button(
+  {
+    as: Component = 'button',
+    variant = 'primary',
+    size = 'md',
+    isLoading = false,
+    icon: Icon,
+    iconRight: IconRight,
+    className = '',
+    children,
+    disabled,
+    type,
+    ...props
+  },
+  ref
+) {
+  const isButton = Component === 'button';
   return (
-    <button
-      className={`${baseStyles} ${sizes[size]} ${variants[variant] || variants.primary} ${className}`}
-      disabled={disabled || isLoading}
+    <Component
+      ref={ref}
+      className={`${BASE} ${SIZES[size] || SIZES.md} ${VARIANTS[variant] || VARIANTS.primary} ${className}`}
+      {...(isButton ? { type: type || 'button', disabled: disabled || isLoading } : {})}
+      aria-busy={isLoading || undefined}
+      aria-disabled={!isButton && disabled ? true : undefined}
       {...props}
     >
       {isLoading ? (
-        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-      ) : Icon ? (
-        <Icon className="w-4 h-4 shrink-0" />
-      ) : null}
-      <span>{children}</span>
-    </button>
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : (
+        Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      )}
+      {children}
+      {IconRight && !isLoading && <IconRight className="h-4 w-4 shrink-0" aria-hidden="true" />}
+    </Component>
   );
-};
+});
+
+export const IconButton = forwardRef(function IconButton({ label, icon: Icon, className = '', variant = 'ghost', ...props }, ref) {
+  return (
+    <Button ref={ref} variant={variant} size="icon" aria-label={label} title={label} className={className} {...props}>
+      <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+    </Button>
+  );
+});

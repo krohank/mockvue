@@ -2,81 +2,76 @@ import { env } from '../../config/env.js';
 import { GeminiProvider } from './GeminiProvider.js';
 import { OpenAIProvider } from './OpenAIProvider.js';
 import { FallbackProvider } from './FallbackProvider.js';
+import { normalizeEvaluation } from './normalizeEvaluation.js';
 
-class AIServiceManager {
-  constructor() {
-    this.fallbackProvider = new FallbackProvider();
-    this.primaryProvider = this.resolvePrimaryProvider();
+/**
+ * Routes AI work to the configured provider and degrades gracefully to the
+ * offline question bank / heuristic evaluator on any failure (bad key,
+ * timeout, malformed JSON, out-of-range scores).
+ */
+export class AIServiceManager {
+  constructor({ primary, fallback = new FallbackProvider() } = {}) {
+    this.fallbackProvider = fallback;
+    this.primaryProvider = primary === undefined ? this.resolvePrimaryProvider() : primary || fallback;
   }
 
   resolvePrimaryProvider() {
-    const providerName = (env.AI_PROVIDER || 'fallback').toLowerCase();
+    const name = env.AI_PROVIDER;
+    const opts = { timeoutMs: env.AI_TIMEOUT_MS };
 
-    if (providerName === 'gemini' && env.AI_API_KEY) {
-      console.log(`[AI] Initializing Google Gemini Provider (model: ${env.AI_MODEL})`);
-      return new GeminiProvider(env.AI_API_KEY, env.AI_MODEL);
+    if (name === 'gemini' && env.AI_API_KEY) {
+      if (!env.isTest) console.log(`[AI] Using Google Gemini (${env.AI_MODEL})`);
+      return new GeminiProvider(env.AI_API_KEY, env.AI_MODEL, opts);
     }
-
-    if (providerName === 'openai' && env.AI_API_KEY) {
-      console.log(`[AI] Initializing OpenAI Provider (model: ${env.AI_MODEL || 'gpt-4o-mini'})`);
-      return new OpenAIProvider(env.AI_API_KEY, env.AI_MODEL || 'gpt-4o-mini');
+    if (name === 'openai' && env.AI_API_KEY) {
+      if (!env.isTest) console.log(`[AI] Using OpenAI (${env.AI_MODEL})`);
+      return new OpenAIProvider(env.AI_API_KEY, env.AI_MODEL, opts);
     }
-
-    console.log('[AI] Running with Offline Curated Placement Question Bank (Fallback Mode)');
+    if (name !== 'fallback' && !env.isTest) {
+      console.warn(`[AI] AI_PROVIDER=${name} but AI_API_KEY is empty — using the offline question bank.`);
+    } else if (!env.isTest) {
+      console.log('[AI] Using the offline question bank and rubric evaluator.');
+    }
     return this.fallbackProvider;
   }
 
-  /**
-   * Resilient question generator with automatic timeout and fallback handling.
-   */
-  async generateQuestions(config) {
-    if (this.primaryProvider && this.primaryProvider !== this.fallbackProvider) {
-      try {
-        console.log(`[AI] Dispatching question generation request to: ${this.primaryProvider.name}`);
-
-        // Add 12-second timeout to prevent hanging UI
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI generation timed out after 12s')), 12000)
-        );
-
-        const result = await Promise.race([
-          this.primaryProvider.generateQuestions(config),
-          timeoutPromise,
-        ]);
-
-        return result;
-      } catch (err) {
-        console.warn(`[AI WARN] Primary provider (${this.primaryProvider.name}) failed: ${err.message}. Engaging Fallback Question Bank...`);
-      }
-    }
-
-    return await this.fallbackProvider.generateQuestions(config);
+  get usesFallbackOnly() {
+    return this.primaryProvider === this.fallbackProvider;
   }
 
-  /**
-   * Resilient answer evaluation with automatic fallback handling.
-   */
-  async evaluateAnswer(data) {
-    if (this.primaryProvider && this.primaryProvider !== this.fallbackProvider) {
+  async generateQuestions(config) {
+    if (!this.usesFallbackOnly) {
       try {
-        console.log(`[AI] Dispatching answer evaluation to: ${this.primaryProvider.name}`);
-
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI evaluation timed out after 12s')), 12000)
-        );
-
-        const result = await Promise.race([
-          this.primaryProvider.evaluateAnswer(data),
-          timeoutPromise,
-        ]);
-
-        return result;
+        const result = await this.primaryProvider.generateQuestions(config);
+        const questions = result.questions || [];
+        if (questions.length >= config.questionCount) {
+          return { ...result, questions: questions.slice(0, config.questionCount) };
+        }
+        // Top up a short LLM response from the curated bank instead of failing.
+        const extra = await this.fallbackProvider.generateQuestions({
+          ...config,
+          questionCount: config.questionCount - questions.length,
+          excludeTexts: questions.map((q) => q.questionText),
+        });
+        return { ...result, questions: [...questions, ...extra.questions] };
       } catch (err) {
-        console.warn(`[AI WARN] Primary evaluation failed: ${err.message}. Engaging heuristic fallback evaluation...`);
+        console.warn(`[AI] ${this.primaryProvider.name} question generation failed: ${err.message}. Using question bank.`);
       }
     }
+    return this.fallbackProvider.generateQuestions(config);
+  }
 
-    return await this.fallbackProvider.evaluateAnswer(data);
+  async evaluateAnswer(data) {
+    if (!this.usesFallbackOnly) {
+      try {
+        const raw = await this.primaryProvider.evaluateAnswer(data);
+        return normalizeEvaluation(raw, { provider: this.primaryProvider.name, isFallback: false });
+      } catch (err) {
+        console.warn(`[AI] ${this.primaryProvider.name} evaluation failed: ${err.message}. Using rubric heuristics.`);
+      }
+    }
+    const raw = await this.fallbackProvider.evaluateAnswer(data);
+    return normalizeEvaluation(raw, { provider: 'fallback', isFallback: true });
   }
 }
 

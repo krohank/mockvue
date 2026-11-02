@@ -1,265 +1,307 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  VideoOff, 
-  ShieldCheck, 
-  Award, 
-  AlertCircle,
-  Play,
-  CheckCircle,
-  AlertTriangle
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowRight,
+  Camera,
+  CheckCircle2,
+  Circle,
+  Crosshair,
+  Loader2,
+  Maximize,
+  Mic,
+  ScanFace,
+  ShieldAlert,
+  Timer,
+  ListChecks,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
+import { useAsync, useDocumentTitle } from '../hooks/useAsync';
+import { useCamera, useVideoStream } from '../hooks/useCamera';
+import { useElementRef } from '../hooks/useElementRef';
+import { useVisionEngine } from '../hooks/useVisionEngine';
+import { dictationSupported } from '../hooks/useDictation';
+import { fullscreenSupported } from '../hooks/useExamLockdown';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { Spinner } from '../components/ui/Spinner';
+import { Card } from '../components/ui/Card';
+import { Alert, ErrorState, PageLoader } from '../components/ui/Feedback';
+import { PageContainer } from '../components/layout/PageHeader';
+import { CameraView, VisionReadout } from '../components/proctoring/CameraPanel';
+import { PROCTORING_POLICY } from '../services/cv/policy';
+import { saveProctoringSetup } from '../services/proctoringSession';
+import { TOPIC_SHORT } from '../lib/constants';
+import { pluralize } from '../lib/format';
 import api from '../services/api';
+
+const CALIBRATION_MS = 3000;
+
+const Check = ({ state, title, detail }) => {
+  const Icon = { ok: CheckCircle2, pending: Circle, loading: Loader2, warn: AlertTriangle, fail: XCircle }[state];
+  const tone = { ok: 'text-success', pending: 'text-ink-3', loading: 'text-ink-3 animate-spin', warn: 'text-warning', fail: 'text-danger' }[state];
+  return (
+    <li className="flex items-start gap-3 py-2.5">
+      <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${tone}`} aria-hidden="true" />
+      <div>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {detail && <p className="text-xs text-ink-3">{detail}</p>}
+      </div>
+      <span className="sr-only">{state}</span>
+    </li>
+  );
+};
+
+const RULES = [
+  { tone: 'danger', text: 'Leaving full-screen, switching tabs, or switching apps ends the interview immediately.' },
+  { tone: 'warning', text: `Being out of frame for ${PROCTORING_POLICY.absenceSeconds}s, looking away for ${PROCTORING_POLICY.lookAwaySeconds}s, another person, a phone, or voices while you are silent each give a warning.` },
+  { tone: 'warning', text: 'Copy, paste, right-click and developer tools are blocked; attempts give a warning.' },
+  { tone: 'danger', text: `The interview ends after ${PROCTORING_POLICY.maxWarnings} warnings. Answers already submitted are kept and scored.` },
+];
 
 export const InterviewPrepPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [videoRef, videoEl] = useElementRef();
+  const [canvasRef, canvasEl] = useElementRef();
+  const camera = useCamera();
+  const [heardVoice, setHeardVoice] = useState(false);
+  const [calibration, setCalibration] = useState({ state: 'idle', progress: 0, result: null });
+  const [consent, setConsent] = useState(false);
+  const [skipCamera, setSkipCamera] = useState(false);
 
-  const [interview, setInterview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [isStarting, setIsStarting] = useState(false);
-
-  // Hardware Checks State
-  const [cameraActive, setCameraActive] = useState(false);
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
+  const { data: interview, loading, error, reload } = useAsync(async () => (await api.get(`/interviews/${id}`)).interview, [id]);
+  useDocumentTitle(interview ? 'System check' : 'Loading interview');
 
   useEffect(() => {
-    api.get(`/interviews/${id}`)
-      .then((res) => {
-        setInterview(res.interview);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load interview session.');
-        setLoading(false);
-      });
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, [id]);
-
-  const toggleCamera = async () => {
-    if (cameraActive) {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      setCameraActive(false);
-      if (videoRef.current) videoRef.current.srcObject = null;
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        setCameraActive(true);
-      } catch (err) {
-        console.warn('Camera/Mic permission denied or not available:', err.message);
-        alert('Could not access camera/microphone. Ensure permissions are granted before starting the proctored viva.');
-      }
+    if (interview && ['completed', 'terminated', 'abandoned'].includes(interview.status)) {
+      navigate(`/interviews/${id}/results`, { replace: true });
     }
+  }, [interview, id, navigate]);
+
+  useVideoStream(videoEl, camera.stream);
+  const onFrame = useCallback((f) => {
+    if (f.voice) setHeardVoice(true);
+  }, []);
+  const vision = useVisionEngine({ video: videoEl, canvas: canvasEl, stream: camera.stream, enabled: camera.state === 'active', onFrame });
+
+  const live = vision.live;
+  const visionReady = vision.status.state === 'ready' || vision.status.state === 'basic';
+  const faceOk = live?.faceCount === 1;
+  const calibrated = calibration.state === 'done';
+
+  const calibrate = async () => {
+    const engine = vision.engineRef.current;
+    if (!engine) return;
+    setCalibration({ state: 'running', progress: 0, result: null });
+    const started = performance.now();
+    const timer = setInterval(() => {
+      setCalibration((c) => (c.state === 'running' ? { ...c, progress: Math.min(1, (performance.now() - started) / CALIBRATION_MS) } : c));
+    }, 100);
+    const result = await engine.calibrate(CALIBRATION_MS);
+    clearInterval(timer);
+    setCalibration({ state: result.ok ? 'done' : 'failed', progress: 1, result });
   };
 
-  const handleStartInterview = async () => {
-    setIsStarting(true);
-    try {
-      await api.post(`/interviews/${id}/start`);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      navigate(`/interviews/${id}/room`);
-    } catch (err) {
-      setError(err.message || 'Failed to start interview.');
-      setIsStarting(false);
-    }
+  const fsSupported = fullscreenSupported();
+  const cameraReady = camera.state === 'active';
+  const canStart = consent && (skipCamera || (cameraReady && visionReady && (calibrated || vision.status.state === 'basic')));
+
+  const start = () => {
+    const engine = vision.engineRef.current;
+    saveProctoringSetup(id, {
+      camera: !skipCamera && cameraReady,
+      calibrated,
+      baseline: calibration.result?.baseline || null,
+      noiseFloorDb: calibration.result?.noiseFloorDb ?? engine?.noiseFloorDb ?? null,
+    });
+    camera.stop();
+    navigate(`/interviews/${id}/room`);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center">
-        <Spinner size="lg" label="Initializing Session Parameters..." />
-      </div>
-    );
-  }
+  if (loading) return <PageLoader label="Loading interview…" />;
+  if (error) return <ErrorState title="Interview unavailable" message={error.message} onRetry={reload} action={<Link to="/dashboard" className="link text-sm">Dashboard</Link>} />;
+  if (!interview) return null;
 
-  if (error || !interview) {
-    return (
-      <div className="max-w-md mx-auto my-20 p-6 stitch-card text-center">
-        <AlertCircle className="w-8 h-8 text-[#A33B3B] mx-auto mb-3" />
-        <h2 className="text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">Session Unavailable</h2>
-        <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-5 font-mono">{error || 'Session not found'}</p>
-        <Button size="sm" onClick={() => navigate('/dashboard')}>Return to Dashboard</Button>
-      </div>
-    );
-  }
+  const cameraCheck =
+    camera.state === 'active' ? 'ok' : camera.state === 'requesting' ? 'loading' : camera.state === 'error' || camera.state === 'ended' ? 'fail' : 'pending';
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 animate-fade-in">
-      {/* Session Title & Overview */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-[#DED9D0] dark:border-[#332F2A]">
+    <PageContainer size="full">
+      <div className="flex flex-col gap-4 pb-8 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-2 font-mono">
-            <Badge variant="brand" size="sm">{interview.difficulty.toUpperCase()}</Badge>
-            <Badge variant="neutral" size="sm">{interview.interviewType.toUpperCase()}</Badge>
-            {interview.isFallbackAI && <Badge variant="warning" size="sm">CURATED REPOSITORY</Badge>}
+          <p className="eyebrow">System check</p>
+          <h1 className="display mt-2 text-3xl sm:text-4xl">{interview.title}</h1>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge icon={ListChecks}>{pluralize(interview.questions.length, 'question')}</Badge>
+            <Badge icon={Timer}>{interview.durationMinutes} min</Badge>
+            {interview.topics.map((t) => (
+              <Badge key={t} tone="accent">
+                {TOPIC_SHORT[t] || t}
+              </Badge>
+            ))}
+            {interview.status === 'in_progress' && <Badge tone="brass" dot>In progress — timer running</Badge>}
           </div>
-          <h1 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE]">
-            {interview.title}
-          </h1>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-1 font-mono">
-            {interview.questions?.length} QUESTIONS • {interview.durationMinutes} MINUTE EXAMINATION BUDGET
-          </p>
         </div>
-
-        <Button
-          size="md"
-          icon={Play}
-          isLoading={isStarting}
-          onClick={handleStartInterview}
-        >
-          Initialize Examination Room
-        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Device & Hardware Verification */}
-        <div className="space-y-4">
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE]">
-                Webcam & Sensor Calibration
-              </h3>
-              <button
-                onClick={toggleCamera}
-                className="font-mono text-xs font-semibold text-[#7A263A] dark:text-[#D4AA6A] hover:underline"
-              >
-                {cameraActive ? 'Deactivate Device' : 'Test Device Feed'}
-              </button>
-            </div>
-            <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-3">
-              Webcam is required for engagement telemetry and proctoring audit during the viva examination.
-            </p>
-
-            <div className="relative aspect-video rounded-xl bg-[#1C1916] overflow-hidden flex items-center justify-center border border-[#DED9D0] dark:border-[#332F2A]">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
-              />
-              {!cameraActive && (
-                <div className="text-center p-6 text-[#9E988F] space-y-2">
-                  <div className="w-10 h-10 rounded-[8px] bg-[#24201C] border border-[#332F2A] flex items-center justify-center mx-auto text-[#68645E]">
-                    <VideoOff className="w-5 h-5" />
+      <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
+        <Card>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
+              <Camera className="h-4 w-4 text-accent-ink" aria-hidden="true" /> Camera & vision
+            </h2>
+            {cameraReady && (
+              <Button variant="ghost" size="sm" onClick={camera.stop}>
+                Turn off
+              </Button>
+            )}
+          </div>
+          <div className="grid gap-5 md:grid-cols-[1.3fr_1fr]">
+            <CameraView
+              videoRef={videoRef}
+              canvasRef={canvasRef}
+              cameraState={camera.state}
+              cameraError={camera.error}
+              onStart={camera.start}
+              status={vision.status}
+              live={live}
+            >
+              {calibration.state === 'running' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/35 text-white">
+                  <Crosshair className="h-10 w-10 animate-pulse" aria-hidden="true" />
+                  <p className="mt-3 text-sm font-medium">Look at the centre of your screen</p>
+                  <div className="mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-white/25">
+                    <div className="h-full rounded-full bg-white transition-[width] duration-100" style={{ width: `${calibration.progress * 100}%` }} />
                   </div>
-                  <p className="text-xs font-mono">Device feed inactive</p>
-                  <Button size="sm" variant="secondary" onClick={toggleCamera}>
-                    Activate Preview
-                  </Button>
                 </div>
               )}
-              {cameraActive && (
-                <div className="absolute bottom-2 left-2 bg-[#1C1916]/90 backdrop-blur-md px-2.5 py-1 rounded-[6px] text-[10px] font-mono text-[#3F6B52] dark:text-[#88BA9D] flex items-center gap-1.5 border border-[#3F6B52]/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#3F6B52] animate-pulse" />
-                  SENSOR VERIFIED ONLINE
-                </div>
-              )}
-            </div>
-          </Card>
-
-          <div className="p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#F0ECE4]/70 dark:bg-[#1C1916] text-xs text-[#68645E] dark:text-[#9E988F] space-y-1">
-            <div className="flex items-center gap-1.5 text-[#171717] dark:text-[#F7F4EE] font-medium">
-              <ShieldCheck className="w-4 h-4 text-[#3F6B52]" />
-              <span>Client-Side Privacy Compliance</span>
-            </div>
-            <p className="text-[11px] leading-relaxed">
-              All proctoring computer vision metrics run directly in-memory in your browser. No raw video tracks are transmitted to external servers.
-            </p>
-          </div>
-        </div>
-
-        {/* Right: Evaluation Rubric Breakdown */}
-        <div className="space-y-4">
-          <Card className="p-5">
-            <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE] mb-3 flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-[#7A263A] dark:text-[#D4AA6A]" />
-              4-Tier Rubric Specification (100%)
-            </h3>
-
-            <div className="space-y-2.5 text-xs font-mono">
-              <div className="p-3 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <div className="flex justify-between font-bold text-[#171717] dark:text-[#F7F4EE] mb-0.5">
-                  <span>1. Technical Correctness</span>
-                  <span className="text-[#3F6B52]">40%</span>
-                </div>
-                <p className="text-[11px] text-[#68645E] dark:text-[#9E988F] font-sans">
-                  Theoretical validity, algorithm mechanics, complexity bounds, correct terminology.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <div className="flex justify-between font-bold text-[#171717] dark:text-[#F7F4EE] mb-0.5">
-                  <span>2. Question Relevance</span>
-                  <span className="text-[#C59A5B]">20%</span>
-                </div>
-                <p className="text-[11px] text-[#68645E] dark:text-[#9E988F] font-sans">
-                  Direct responsiveness to prompt constraints without extraneous filler.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <div className="flex justify-between font-bold text-[#171717] dark:text-[#F7F4EE] mb-0.5">
-                  <span>3. Completeness</span>
-                  <span className="text-[#A66A24]">20%</span>
-                </div>
-                <p className="text-[11px] text-[#68645E] dark:text-[#9E988F] font-sans">
-                  Coverage of architectural trade-offs, edge cases, and scale failure modes.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <div className="flex justify-between font-bold text-[#171717] dark:text-[#F7F4EE] mb-0.5">
-                  <span>4. Communication Clarity</span>
-                  <span className="text-[#3F6B52]">20%</span>
-                </div>
-                <p className="text-[11px] text-[#68645E] dark:text-[#9E988F] font-sans">
-                  Logical sequence, coherent narrative, clear architectural step-by-step reasoning.
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <div className="p-4 rounded-xl border border-[#E8D5BE] dark:border-[#A66A24]/40 bg-[#FBF5EC] dark:bg-[#A66A24]/10 text-xs font-mono space-y-1.5">
-            <span className="font-bold text-[#A66A24] dark:text-[#DEAC74] uppercase tracking-wider block flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              MANDATORY PROCTORING PROTOCOL:
-            </span>
-            <p className="text-[11px] text-[#171717] dark:text-[#F7F4EE] font-sans leading-relaxed">
-              1. <strong>All-Time Camera:</strong> Continuous webcam access is maintained during the viva.<br />
-              2. <strong>Full-Screen Lock:</strong> The exam executes in strict full-screen mode. <strong>Exiting full screen will immediately terminate your exam and submit answered questions.</strong>
-            </p>
+            </CameraView>
+            <div>{cameraReady ? <VisionReadout live={live} status={vision.status} hasAudio={camera.hasAudio} /> : <p className="text-sm text-ink-3">Turn on your camera to run the checks. Video is processed on this device and never uploaded.</p>}</div>
           </div>
 
-          <div className="p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] flex items-center justify-between shadow-paper">
-            <span className="text-xs font-mono text-[#68645E] dark:text-[#9E988F]">
-              Timer commences on entrance.
-            </span>
-            <Button size="sm" icon={Play} onClick={handleStartInterview} isLoading={isStarting}>
-              Enter Proctored Exam
+          <ol className="mt-6 divide-y divide-line border-t border-line">
+            <Check state={cameraCheck} title="Camera access" detail={camera.error || (cameraReady ? 'Camera stream active' : 'Needed for proctoring')} />
+            <Check
+              state={!cameraReady ? 'pending' : vision.status.state === 'loading' ? 'loading' : vision.status.state === 'ready' ? 'ok' : vision.status.state === 'basic' ? 'warn' : 'pending'}
+              title="Vision models"
+              detail={vision.status.message || 'Face landmarks and object detection, running locally'}
+            />
+            <Check
+              state={!cameraReady || !live ? 'pending' : faceOk ? 'ok' : 'fail'}
+              title="One face in view"
+              detail={!live ? 'Waiting for the camera' : live.faceCount === 0 ? 'No face detected — check lighting and framing' : live.faceCount > 1 ? 'More than one face detected' : 'Only you are in frame'}
+            />
+            <Check
+              state={!cameraReady ? 'pending' : !camera.hasAudio ? 'warn' : heardVoice ? 'ok' : 'pending'}
+              title="Microphone"
+              detail={!camera.hasAudio ? 'No microphone — voice checks and dictation are off' : heardVoice ? 'We can hear you' : 'Say a few words to test'}
+            />
+            <li className="flex items-start justify-between gap-3 py-2.5">
+              <div className="flex items-start gap-3">
+                {calibrated ? (
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden="true" />
+                ) : calibration.state === 'failed' ? (
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+                ) : (
+                  <ScanFace className="mt-0.5 h-5 w-5 shrink-0 text-ink-3" aria-hidden="true" />
+                )}
+                <div>
+                  <p className="text-sm font-medium text-ink">Calibrate your neutral pose</p>
+                  <p className="text-xs text-ink-3">
+                    {calibrated
+                      ? `Done — head ${Math.round(calibration.result.baseline.yaw)}° / ${Math.round(calibration.result.baseline.pitch)}°, so your camera angle won’t count against you.`
+                      : calibration.state === 'failed'
+                        ? 'Couldn’t see your face clearly enough. Adjust lighting and try again.'
+                        : 'Sit as you will during the interview and look at the screen for 3 seconds.'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant={calibrated ? 'ghost' : 'secondary'}
+                onClick={calibrate}
+                disabled={!faceOk || vision.status.state !== 'ready' || calibration.state === 'running'}
+                isLoading={calibration.state === 'running'}
+              >
+                {calibrated ? 'Redo' : 'Calibrate'}
+              </Button>
+            </li>
+            <Check state={fsSupported ? 'ok' : 'warn'} title="Full-screen mode" detail={fsSupported ? 'Supported in this browser' : 'Not supported here (common on iPhone) — the interview runs without it'} />
+            <Check
+              state={dictationSupported() ? 'ok' : 'warn'}
+              title="Dictation (optional)"
+              detail={dictationSupported() ? 'You can speak your answers' : 'Not available in this browser — you can still type'}
+            />
+          </ol>
+        </Card>
+
+        <div className="flex flex-col gap-6">
+          <Card>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
+              <ShieldAlert className="h-4 w-4 text-accent-ink" aria-hidden="true" /> Interview rules
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {RULES.map((r) => (
+                <li key={r.text} className="flex gap-3 text-sm text-ink-2">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${r.tone === 'danger' ? 'bg-danger' : 'bg-warning'}`} aria-hidden="true" />
+                  {r.text}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 rounded-lg bg-surface-2 p-3 text-xs text-ink-3">
+              Glancing down at your keyboard while typing is fine. Short look-aways reset and don’t count. The camera feed is analysed
+              on this device and never recorded or uploaded.
+            </p>
+          </Card>
+
+          <Card>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-line-strong accent-[rgb(var(--accent))]"
+              />
+              <span className="text-sm text-ink-2">I understand the rules and agree to camera and microphone monitoring for this interview.</span>
+            </label>
+
+            {(camera.state === 'error' || camera.state === 'ended') && (
+              <Alert tone="warning" className="mt-4" title="Camera unavailable">
+                <p>You can still practice without proctoring. Your report will be marked as not monitored.</p>
+                <label className="mt-2 flex items-center gap-2 text-sm text-ink">
+                  <input type="checkbox" checked={skipCamera} onChange={(e) => setSkipCamera(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--accent))]" />
+                  Continue without camera
+                </label>
+              </Alert>
+            )}
+
+            <Button size="lg" className="mt-5 w-full" iconRight={ArrowRight} disabled={!canStart} onClick={start}>
+              {interview.status === 'in_progress' ? 'Return to interview' : 'Continue to interview'}
             </Button>
-          </div>
+            {!canStart && (
+              <p className="mt-2 text-center text-xs text-ink-3">
+                {!consent
+                  ? 'Accept the rules to continue.'
+                  : !cameraReady && !skipCamera
+                    ? 'Turn on your camera to continue.'
+                    : !calibrated
+                      ? 'Calibrate to continue.'
+                      : 'Finishing checks…'}
+              </p>
+            )}
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-ink-3">
+              <Maximize className="h-3.5 w-3.5" aria-hidden="true" /> Next you’ll enter full-screen, then the {interview.durationMinutes}-minute timer starts.
+            </p>
+            {!camera.hasAudio && cameraReady && (
+              <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-ink-3">
+                <Mic className="h-3.5 w-3.5" aria-hidden="true" /> No microphone detected.
+              </p>
+            )}
+          </Card>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 };
+
+export default InterviewPrepPage;

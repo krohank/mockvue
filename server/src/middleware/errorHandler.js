@@ -1,63 +1,71 @@
 import { env } from '../config/env.js';
 
 export const errorHandler = (err, req, res, next) => {
-  let statusCode = err.statusCode || 500;
+  if (res.headersSent) return next(err);
+
+  let statusCode = err.statusCode || err.status || 500;
+  if (typeof statusCode !== 'number') statusCode = 500;
   let message = err.message || 'Internal Server Error';
   let details = err.details || null;
 
-  // Handle Mongoose Bad ObjectId (CastError)
   if (err.name === 'CastError') {
     statusCode = 400;
-    message = `Invalid format for field: ${err.path}`;
+    message = `Invalid value for field: ${err.path}`;
   }
 
-  // Handle Mongoose Duplicate Key Error
   if (err.code === 11000) {
     statusCode = 409;
     const field = Object.keys(err.keyValue || {})[0] || 'field';
     message = `A record with this ${field} already exists.`;
   }
 
-  // Handle Mongoose Validation Error
-  if (err.name === 'ValidationError') {
+  if (err.name === 'ValidationError' && err.errors) {
     statusCode = 400;
     message = 'Validation failed';
-    details = Object.values(err.errors).map((e) => ({
-      field: e.path,
-      message: e.message,
-    }));
+    details = Object.values(err.errors).map((e) => ({ field: e.path, message: e.message }));
+    message = details[0]?.message || message;
   }
 
-  // Handle JWT Errors
+  if (err.type === 'entity.parse.failed') {
+    statusCode = 400;
+    message = 'Malformed JSON request body.';
+  }
+  if (err.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'Request body is too large.';
+  }
+
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;
-    message = 'Invalid authentication token. Please log in again.';
+    message = 'Invalid authentication token. Please sign in again.';
   }
   if (err.name === 'TokenExpiredError') {
     statusCode = 401;
-    message = 'Your session has expired. Please log in again.';
+    message = 'Your session has expired. Please sign in again.';
   }
 
-  // Structured response
-  const response = {
-    success: false,
-    status: err.status || (statusCode >= 500 ? 'error' : 'fail'),
-    message,
-    ...(details && { details }),
-    ...(env.isDev && { stack: err.stack }),
-  };
+  // Never leak internals of unexpected failures in production.
+  if (statusCode >= 500 && env.isProd) {
+    message = 'Something went wrong on our side. Please try again.';
+  }
 
   if (statusCode >= 500) {
     console.error('[SERVER ERROR]', err);
   }
 
-  res.status(statusCode).json(response);
+  res.status(statusCode).json({
+    success: false,
+    status: statusCode >= 500 ? 'error' : 'fail',
+    message,
+    ...(details && { details }),
+    ...(env.isDev && statusCode >= 500 && { stack: err.stack }),
+  });
 };
 
-export const notFoundHandler = (req, res, next) => {
+export const notFoundHandler = (req, res) => {
   res.status(404).json({
     success: false,
     status: 'fail',
-    message: `Cannot ${req.method} ${req.originalUrl} — route not found on this server.`,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 };

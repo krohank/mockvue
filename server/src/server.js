@@ -6,18 +6,15 @@ let server;
 
 const startServer = async () => {
   try {
-    // 1. Connect to Database
     await connectDB();
 
-    // 2. Start HTTP Listener
     server = app.listen(env.PORT, () => {
-      console.log(`====================================================`);
-      console.log(`🚀 MockVue API Server running in [${env.NODE_ENV}] mode`);
-      console.log(`📡 Port: http://localhost:${env.PORT}`);
-      console.log(`🩺 Healthcheck: http://localhost:${env.PORT}/api/health`);
-      console.log(`🌐 Allowed Client URL: ${env.CLIENT_URL}`);
-      console.log(`🤖 AI Provider: ${env.AI_PROVIDER}`);
-      console.log(`====================================================`);
+      console.log('──────────────────────────────────────────────');
+      console.log(`MockVue API (${env.NODE_ENV}) listening on http://localhost:${env.PORT}`);
+      console.log(`Health:      http://localhost:${env.PORT}/api/health`);
+      console.log(`Client URL:  ${env.CLIENT_URL}`);
+      console.log(`AI provider: ${env.AI_PROVIDER} (${env.AI_MODEL})`);
+      console.log('──────────────────────────────────────────────');
     });
   } catch (error) {
     console.error('Fatal startup error:', error);
@@ -25,26 +22,26 @@ const startServer = async () => {
   }
 };
 
-// Graceful Shutdown
 const handleShutdown = async (signal) => {
-  console.log(`\n[SHUTDOWN] Received ${signal}. Closing HTTP server and database...`);
-  if (server) {
-    server.close(async () => {
-      console.log('[SHUTDOWN] HTTP server closed.');
-      await disconnectDB();
-      process.exit(0);
-    });
-  } else {
+  console.log(`\n[SHUTDOWN] ${signal} received. Closing server...`);
+  const finish = async () => {
     await disconnectDB();
     process.exit(0);
+  };
+  if (server) {
+    server.close(finish);
+    // Force exit if connections hang.
+    setTimeout(() => process.exit(0), 5000).unref();
+  } else {
+    await finish();
   }
 };
 
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGINT', () => handleShutdown('SIGINT'));
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[UNHANDLED REJECTION] at:', promise, 'reason:', reason);
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
 });
 
 startServer();

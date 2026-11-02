@@ -1,5 +1,8 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { TARGET_ROLES, EXPERIENCE_LEVELS } from '../config/constants.js';
+
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const userSchema = new mongoose.Schema(
   {
@@ -15,35 +18,23 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        'Please provide a valid email address',
-      ],
-      index: true,
+      maxlength: [254, 'Email is too long'],
+      match: [EMAIL_PATTERN, 'Please provide a valid email address'],
     },
     passwordHash: {
       type: String,
       required: [true, 'Please provide a password'],
-      minlength: [6, 'Password must be at least 6 characters'],
-      select: false, // Do not return password by default in queries
+      minlength: [8, 'Password must be at least 8 characters'],
+      select: false,
     },
     targetRole: {
       type: String,
-      enum: [
-        'Software Development Engineer',
-        'Frontend Developer',
-        'Backend Developer',
-        'Full Stack Developer',
-        'Data Analyst',
-        'Java Developer',
-        'Python Developer',
-        'DevOps Engineer',
-      ],
+      enum: TARGET_ROLES,
       default: 'Software Development Engineer',
     },
     experienceLevel: {
       type: String,
-      enum: ['Entry-Level', 'Junior', 'Mid-Level', 'Senior'],
+      enum: EXPERIENCE_LEVELS,
       default: 'Entry-Level',
     },
     preferredTopics: {
@@ -56,28 +47,22 @@ const userSchema = new mongoose.Schema(
       default: '',
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Pre-save hook: Hash password if modified
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('passwordHash')) {
-    return next();
-  }
+// Hash the password whenever it is set or changed.
+userSchema.pre('save', async function hashPassword() {
+  if (!this.isModified('passwordHash')) return;
   const salt = await bcrypt.genSalt(10);
   this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
-  next();
 });
 
-// Instance method: Verify candidate password
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.passwordHash);
+userSchema.methods.matchPassword = async function matchPassword(enteredPassword) {
+  if (!this.passwordHash) return false;
+  return bcrypt.compare(enteredPassword, this.passwordHash);
 };
 
-// Safe JSON serialization: remove sensitive fields
-userSchema.methods.toJSON = function () {
+userSchema.methods.toJSON = function toJSON() {
   const userObject = this.toObject();
   delete userObject.passwordHash;
   delete userObject.__v;

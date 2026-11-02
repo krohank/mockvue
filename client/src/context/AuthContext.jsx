@@ -1,106 +1,127 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
+import { local, KEYS } from '../lib/storage';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
+/**
+ * status: 'checking'      — token present, verifying with the server
+ *         'authenticated' — verified (or optimistically restored from cache)
+ *         'anonymous'     — signed out
+ */
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('mockvue_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+  const [token, setToken] = useState(() => local.get(KEYS.token));
+  const [user, setUser] = useState(() => local.get(KEYS.user));
+  const [status, setStatus] = useState(() => {
+    if (!local.get(KEYS.token)) return 'anonymous';
+    return local.get(KEYS.user) ? 'authenticated' : 'checking';
   });
+  const [sessionNotice, setSessionNotice] = useState(null);
 
-  const [token, setToken] = useState(() => localStorage.getItem('mockvue_token') || null);
-  const [loading, setLoading] = useState(false);
-
-  // Background profile sync on boot - NEVER logs out without user's explicit choice
-  useEffect(() => {
-    const syncProfileInBackground = async () => {
-      const storedToken = localStorage.getItem('mockvue_token');
-      if (storedToken) {
-        try {
-          const res = await api.get('/auth/me');
-          if (res?.user) {
-            setUser(res.user);
-            localStorage.setItem('mockvue_user', JSON.stringify(res.user));
-          }
-        } catch (err) {
-          // Keep existing session active even if offline or server restarting
-          console.warn('[MockVue Auth] Background sync notice:', err.message || err);
-        }
-      }
-    };
-
-    syncProfileInBackground();
+  const persist = useCallback((nextToken, nextUser) => {
+    setToken(nextToken);
+    setUser(nextUser);
+    if (nextToken) {
+      local.set(KEYS.token, nextToken);
+      local.set(KEYS.user, nextUser);
+      setStatus('authenticated');
+    } else {
+      local.remove(KEYS.token);
+      local.remove(KEYS.user);
+      setStatus('anonymous');
+    }
   }, []);
 
-  const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
-    if (res.token && res.user) {
-      setToken(res.token);
-      setUser(res.user);
-      localStorage.setItem('mockvue_token', res.token);
-      localStorage.setItem('mockvue_user', JSON.stringify(res.user));
-    }
-    return res;
-  };
+  const logout = useCallback(
+    (notice = null) => {
+      persist(null, null);
+      setSessionNotice(notice);
+    },
+    [persist]
+  );
 
-  const register = async (userData) => {
-    const res = await api.post('/auth/register', userData);
-    if (res.token && res.user) {
-      setToken(res.token);
-      setUser(res.user);
-      localStorage.setItem('mockvue_token', res.token);
-      localStorage.setItem('mockvue_user', JSON.stringify(res.user));
-    }
-    return res;
-  };
+  // Verify a stored session on boot.
+  useEffect(() => {
+    if (!local.get(KEYS.token)) return;
+    let cancelled = false;
+    api
+      .get('/auth/me')
+      .then((res) => {
+        if (cancelled || !res?.user) return;
+        setUser(res.user);
+        local.set(KEYS.user, res.user);
+        setStatus('authenticated');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // 401 is handled by the session-expired listener; keep the cached
+        // session when the server is merely unreachable.
+        if (err.status !== 401 && !local.get(KEYS.user)) setStatus('anonymous');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // EXPLICIT LOGOUT ONLY: Triggered exclusively when the user manually clicks "Sign Out"
-  const logout = () => {
-    console.info('[MockVue Auth] User explicitly requested logout.');
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('mockvue_token');
-    localStorage.removeItem('mockvue_user');
-  };
+  useEffect(() => {
+    const onExpired = (e) => {
+      if (!local.get(KEYS.token)) return;
+      logout(e.detail || 'Your session has ended. Please sign in again.');
+    };
+    window.addEventListener('mockvue:session-expired', onExpired);
+    return () => window.removeEventListener('mockvue:session-expired', onExpired);
+  }, [logout]);
 
-  const updateProfile = async (profileData) => {
-    const res = await api.put('/users/profile', profileData);
+  const login = useCallback(
+    async (email, password) => {
+      const res = await api.post('/auth/login', { email, password });
+      persist(res.token, res.user);
+      setSessionNotice(null);
+      return res;
+    },
+    [persist]
+  );
+
+  const register = useCallback(
+    async (payload) => {
+      const res = await api.post('/auth/register', payload);
+      persist(res.token, res.user);
+      setSessionNotice(null);
+      return res;
+    },
+    [persist]
+  );
+
+  const updateProfile = useCallback(async (payload) => {
+    const res = await api.put('/users/profile', payload);
     if (res.user) {
       setUser(res.user);
-      localStorage.setItem('mockvue_user', JSON.stringify(res.user));
+      local.set(KEYS.user, res.user);
     }
     return res;
-  };
+  }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isAuthenticated: Boolean(user && token),
-        loading,
-        login,
-        register,
-        logout,
-        updateProfile,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      status,
+      isAuthenticated: status === 'authenticated' && Boolean(token),
+      sessionNotice,
+      clearSessionNotice: () => setSessionNotice(null),
+      login,
+      register,
+      logout,
+      updateProfile,
+    }),
+    [user, token, status, sessionNotice, login, register, logout, updateProfile]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };
-
-export default AuthContext;

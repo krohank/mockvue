@@ -1,358 +1,288 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Mail, Lock, User, AlertCircle, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowRight, Mail, Lock, User, CheckCircle2, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import { Field, Input, PasswordInput, Select } from '../components/ui/Field';
+import { Alert } from '../components/ui/Feedback';
+import { LogoMark } from '../components/layout/Logo';
 import { useAuth } from '../context/AuthContext';
+import { useDocumentTitle } from '../hooks/useAsync';
+import { TARGET_ROLES, EXPERIENCE_LEVELS } from '../lib/constants';
+import api from '../services/api';
+
+const DEMO_ACCOUNTS = [
+  { email: 'candidate@mockvue.edu', name: 'Aarav Sharma', note: 'Entry level · SDE' },
+  { email: 'megenta.point@gmail.com', name: 'Magenta Point', note: 'Mid level · SDE' },
+];
+const DEMO_PASSWORD = 'password123';
+
+const AuthShell = ({ title, subtitle, children, footer }) => (
+  <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-12 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_1fr] lg:px-8">
+    <div className="mx-auto w-full max-w-md animate-slide-up">
+      <LogoMark className="h-10 w-10" />
+      <h1 className="display mt-6 text-3xl">{title}</h1>
+      {subtitle && <p className="mt-2 text-ink-2">{subtitle}</p>}
+      <div className="mt-8">{children}</div>
+      {footer && <p className="mt-8 text-sm text-ink-3">{footer}</p>}
+    </div>
+    <aside className="hidden lg:block" aria-hidden="true">
+      <div className="card relative overflow-hidden p-10">
+        <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-accent-soft blur-3xl" />
+        <div className="relative">
+          <Sparkles className="h-6 w-6 text-brass" />
+          <p className="display mt-6 text-[1.75rem] leading-snug">
+            The best preparation for an interview is doing one — out loud, on the clock, with honest feedback.
+          </p>
+          <ul className="mt-8 space-y-3 text-[15px] text-ink-2">
+            {[
+              'Questions matched to your role and level',
+              'Rubric scores and model answers for every response',
+              'On-device proctoring that mirrors real exams',
+              'Progress tracked by topic and criterion',
+            ].map((t) => (
+              <li key={t} className="flex items-center gap-3">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+);
 
 export const LoginPage = () => {
+  useDocumentTitle('Sign in');
+  const { login, sessionNotice, clearSessionNotice } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const { login, register: authRegister, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
+  const [pending, setPending] = useState(null); // 'form' | email of demo account
+  const [demoAvailable, setDemoAvailable] = useState(false);
 
-  // If already logged in, redirect directly to dashboard
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
+    api.get('/health').then((h) => setDemoAvailable(Boolean(h?.demoAccounts))).catch(() => {});
+  }, []);
 
-  const handleLogin = async (e, directEmail, directPassword) => {
-    if (e) e.preventDefault();
-    const loginEmail = directEmail || email;
-    const loginPassword = directPassword || password;
+  const goNext = () => navigate(location.state?.from?.pathname || '/dashboard', { replace: true });
 
+  const submit = async (e, creds) => {
+    e?.preventDefault();
+    const loginEmail = creds?.email ?? email;
+    const loginPassword = creds?.password ?? password;
     if (!loginEmail || !loginPassword) {
-      setError('Please provide both email and password.');
+      setError('Enter your email and password.');
       return;
     }
-
     setError('');
-    setIsLoading(true);
-
+    clearSessionNotice();
+    setPending(creds ? loginEmail : 'form');
     try {
       await login(loginEmail, loginPassword);
-      navigate('/dashboard', { replace: true });
+      goNext();
     } catch (err) {
-      setError(err.message || 'Invalid email or password.');
+      setError(err.message);
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFastLogin = async (demoEmail, demoPassword) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setError('');
-    setIsLoading(true);
-
-    try {
-      await login(demoEmail, demoPassword);
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      // If demo user wasn't registered in DB, auto-register and sign in
-      try {
-        await authRegister({
-          name: demoEmail.split('@')[0],
-          email: demoEmail,
-          password: demoPassword,
-          targetRole: 'Software Development Engineer',
-        });
-        navigate('/dashboard', { replace: true });
-      } catch (regErr) {
-        setError(regErr.message || 'Authentication failed. Please check credentials.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAutoRegister = async () => {
-    if (!email) return;
-    setIsLoading(true);
-    setError('');
-
-    try {
-      await authRegister({
-        name: email.split('@')[0],
-        email,
-        password: password || 'password123',
-        targetRole: 'Software Development Engineer',
-      });
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      setError(err.message || 'Auto-registration failed. Please check information.');
-    } finally {
-      setIsLoading(false);
+      setPending(null);
     }
   };
 
   return (
-    <div className="min-h-[82vh] flex items-center justify-center px-4 py-14">
-      <Card className="w-full max-w-md p-6 sm:p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex w-10 h-10 rounded-[8px] bg-[#7A263A] text-white items-center justify-center mb-3 shadow-sm border border-[#C59A5B]/40">
-            <span className="font-serif font-bold text-lg">M</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE]">
-            Candidate Authentication
-          </h2>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-1 font-mono uppercase tracking-wider">
-            PLACEMENT EVALUATION PORTAL
-          </p>
-        </div>
-
-        {/* Fast-Track Demo Credentials Accordion */}
-        <div className="mb-5 p-3 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F0ECE4]/70 dark:bg-[#24201C]/70">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] font-semibold flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#3F6B52]" />
-              Verified Demo Access
-            </span>
-            <span className="text-[10px] font-mono text-[#7A263A] dark:text-[#D4AA6A] font-medium">
-              1-Click Sign-in
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() => handleFastLogin('megenta.point@gmail.com', 'password123')}
-              className="text-left p-2.5 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] hover:border-[#7A263A]/70 hover:shadow-sm transition-all group"
-            >
-              <div className="text-[11px] font-medium text-[#171717] dark:text-[#F7F4EE] truncate group-hover:text-[#7A263A] dark:group-hover:text-[#D4AA6A]">
-                megenta.point@gmail.com
-              </div>
-              <div className="text-[10px] font-mono text-[#68645E] dark:text-[#9E988F] mt-0.5">
-                pwd: password123
-              </div>
-            </button>
-            <button
-              type="button"
-              disabled={isLoading}
-              onClick={() => handleFastLogin('candidate@mockvue.edu', 'password123')}
-              className="text-left p-2.5 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] hover:border-[#7A263A]/70 hover:shadow-sm transition-all group"
-            >
-              <div className="text-[11px] font-medium text-[#171717] dark:text-[#F7F4EE] truncate group-hover:text-[#7A263A] dark:group-hover:text-[#D4AA6A]">
-                candidate@mockvue.edu
-              </div>
-              <div className="text-[10px] font-mono text-[#68645E] dark:text-[#9E988F] mt-0.5">
-                pwd: password123
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-5 p-3.5 rounded-[10px] bg-[#FAF0F0] dark:bg-[#A33B3B]/15 border border-[#E8C4C4] dark:border-[#A33B3B]/40 text-xs text-[#A33B3B] dark:text-[#E59797]">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-            {email && (
-              <div className="mt-2.5 pt-2 border-t border-[#E8C4C4] dark:border-[#A33B3B]/30">
-                <button
-                  type="button"
-                  onClick={handleAutoRegister}
-                  className="w-full py-1.5 px-3 rounded-[6px] bg-[#A33B3B]/10 hover:bg-[#A33B3B]/20 text-[#A33B3B] dark:text-[#E59797] font-mono text-[11px] border border-[#E8C4C4] dark:border-[#A33B3B]/40 text-center font-semibold transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span>Auto-Register & Sign In as {email}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        <form onSubmit={(e) => handleLogin(e)} className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Institutional Email
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-[#68645E] dark:text-[#9E988F] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="candidate@mockvue.edu"
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20 font-mono"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Access Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#68645E] dark:text-[#9E988F] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20"
-              />
-            </div>
-          </div>
-
-          <Button type="submit" isLoading={isLoading} className="w-full mt-2 font-medium" size="md">
-            Sign In to Session
-          </Button>
-        </form>
-
-        <p className="text-center text-xs text-[#68645E] dark:text-[#9E988F] mt-6 font-mono">
-          First time?{' '}
-          <Link to="/register" className="text-[#7A263A] dark:text-[#D4AA6A] font-semibold hover:underline">
-            Register Candidate Account
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to continue practicing."
+      footer={
+        <>
+          New to MockVue?{' '}
+          <Link to="/register" className="link">
+            Create an account
           </Link>
-        </p>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      {sessionNotice && (
+        <Alert tone="warning" className="mb-5">
+          {sessionNotice}
+        </Alert>
+      )}
+      {error && (
+        <Alert tone="danger" className="mb-5">
+          {error}
+        </Alert>
+      )}
+
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <Field label="Email" htmlFor="login-email">
+          <Input
+            id="login-email"
+            type="email"
+            icon={Mail}
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@college.edu"
+            required
+          />
+        </Field>
+        <Field label="Password" htmlFor="login-password">
+          <PasswordInput
+            id="login-password"
+            icon={Lock}
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </Field>
+        <Button type="submit" size="lg" className="w-full" isLoading={pending === 'form'} iconRight={ArrowRight}>
+          Sign in
+        </Button>
+      </form>
+
+      {demoAvailable && (
+        <div className="mt-8">
+          <div className="flex items-center gap-3 text-xs text-ink-3">
+            <span className="h-px flex-1 bg-line" />
+            or try a demo account
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {DEMO_ACCOUNTS.map((acc) => (
+              <button
+                key={acc.email}
+                type="button"
+                disabled={Boolean(pending)}
+                onClick={() => submit(null, { email: acc.email, password: DEMO_PASSWORD })}
+                className="card-interactive flex flex-col items-start rounded-xl p-3 text-left disabled:opacity-60"
+              >
+                <span className="text-sm font-semibold text-ink">{pending === acc.email ? 'Signing in…' : acc.name}</span>
+                <span className="text-xs text-ink-3">{acc.note}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-ink-3">Demo accounts come with sample sessions so you can explore reports and progress.</p>
+        </div>
+      )}
+    </AuthShell>
   );
 };
 
+const passwordStrength = (pw) => {
+  let score = 0;
+  if (pw.length >= 8) score += 1;
+  if (pw.length >= 12) score += 1;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score += 1;
+  if (/\d/.test(pw)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+  if (pw.length < 8) return { label: 'Too short', tone: 'bg-danger', width: '20%' };
+  if (score <= 2) return { label: 'Okay', tone: 'bg-warning', width: '50%' };
+  if (score <= 3) return { label: 'Good', tone: 'bg-success', width: '75%' };
+  return { label: 'Strong', tone: 'bg-success', width: '100%' };
+};
+
 export const RegisterPage = () => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [targetRole, setTargetRole] = useState('Software Development Engineer');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const { register: authRegister, isAuthenticated } = useAuth();
+  useDocumentTitle('Create account');
+  const { register } = useAuth();
   const navigate = useNavigate();
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    targetRole: 'Software Development Engineer',
+    experienceLevel: 'Entry-Level',
+  });
+  const [errors, setErrors] = useState({});
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const strength = passwordStrength(form.password);
 
-  // If already logged in, redirect directly to dashboard
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
+  const validate = () => {
+    const next = {};
+    if (!form.name.trim()) next.name = 'Enter your name.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) next.email = 'Enter a valid email address.';
+    if (form.password.length < 8) next.password = 'Use at least 8 characters.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
-  const handleRegister = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
+    if (!validate()) return;
+    setPending(true);
     setError('');
-    setIsLoading(true);
-
     try {
-      await authRegister({ name, email, password, targetRole });
+      await register({ ...form, name: form.name.trim(), email: form.email.trim() });
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.message || 'Registration failed. Please check your information.');
+      setError(err.message);
     } finally {
-      setIsLoading(false);
+      setPending(false);
     }
   };
 
   return (
-    <div className="min-h-[82vh] flex items-center justify-center px-4 py-14">
-      <Card className="w-full max-w-md p-6 sm:p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex w-10 h-10 rounded-[8px] bg-[#7A263A] text-white items-center justify-center mb-3 shadow-sm border border-[#C59A5B]/40">
-            <span className="font-serif font-bold text-lg">M</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE]">
-            Create Candidate Dossier
-          </h2>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-1 font-mono uppercase tracking-wider">
-            TECHNICAL PLACEMENT TRACK ENROLLMENT
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-5 p-3.5 rounded-[10px] bg-[#FAF0F0] dark:bg-[#A33B3B]/15 border border-[#E8C4C4] dark:border-[#A33B3B]/40 text-xs text-[#A33B3B] dark:text-[#E59797] flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleRegister} className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Full Legal Name
-            </label>
-            <div className="relative">
-              <User className="w-4 h-4 text-[#68645E] dark:text-[#9E988F] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Aarav Sharma"
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Institutional Email
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-[#68645E] dark:text-[#9E988F] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@college.edu"
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20 font-mono"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Access Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#68645E] dark:text-[#9E988F] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-              Target Placement Track
-            </label>
-            <select
-              value={targetRole}
-              onChange={(e) => setTargetRole(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-[10px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#F7F4EE] dark:bg-[#24201C] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20"
-            >
-              <option value="Software Development Engineer">Software Development Engineer (SDE)</option>
-              <option value="Frontend Developer">Frontend Developer (React/Web)</option>
-              <option value="Backend Developer">Backend Developer (Node/Java/Python)</option>
-              <option value="Full Stack Developer">Full Stack Developer (MERN/FullStack)</option>
-              <option value="Data Analyst">Data Analyst (SQL/Python/Analytics)</option>
-            </select>
-          </div>
-
-          <Button type="submit" isLoading={isLoading} className="w-full mt-2 font-medium" size="md" icon={ArrowRight}>
-            Initialize Dossier
-          </Button>
-        </form>
-
-        <p className="text-center text-xs text-[#68645E] dark:text-[#9E988F] mt-6 font-mono">
-          Already registered?{' '}
-          <Link to="/login" className="text-[#7A263A] dark:text-[#D4AA6A] font-semibold hover:underline">
-            Sign In
+    <AuthShell
+      title="Create your account"
+      subtitle="Free, takes a minute. We’ll tailor questions to your role."
+      footer={
+        <>
+          Already have an account?{' '}
+          <Link to="/login" className="link">
+            Sign in
           </Link>
-        </p>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-5">
+          {error}
+        </Alert>
+      )}
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <Field label="Full name" htmlFor="reg-name" error={errors.name}>
+          <Input id="reg-name" icon={User} autoComplete="name" value={form.name} onChange={set('name')} placeholder="Aarav Sharma" />
+        </Field>
+        <Field label="Email" htmlFor="reg-email" error={errors.email}>
+          <Input id="reg-email" type="email" icon={Mail} autoComplete="email" value={form.email} onChange={set('email')} placeholder="you@college.edu" />
+        </Field>
+        <Field label="Password" htmlFor="reg-password" error={errors.password} hint={!errors.password && 'At least 8 characters.'}>
+          <PasswordInput id="reg-password" icon={Lock} autoComplete="new-password" value={form.password} onChange={set('password')} />
+          {form.password && (
+            <div className="mt-2 flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+                <div className={`h-full rounded-full ${strength.tone} transition-all`} style={{ width: strength.width }} />
+              </div>
+              <span className="w-16 text-right text-xs text-ink-3">{strength.label}</span>
+            </div>
+          )}
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Target role" htmlFor="reg-role">
+            <Select id="reg-role" value={form.targetRole} onChange={set('targetRole')}>
+              {TARGET_ROLES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.value}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Experience" htmlFor="reg-level">
+            <Select id="reg-level" value={form.experienceLevel} onChange={set('experienceLevel')}>
+              {EXPERIENCE_LEVELS.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Button type="submit" size="lg" className="w-full" isLoading={pending} iconRight={ArrowRight}>
+          Create account
+        </Button>
+      </form>
+    </AuthShell>
   );
 };

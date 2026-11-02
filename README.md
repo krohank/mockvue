@@ -1,178 +1,237 @@
-# MockVue — AI-Powered Mock Interview & Technical Evaluation Platform
+# MockVue
 
-> **A Production-Grade, Full-Stack Academic Capstone Project for Campus Placements & Technical Interviews.**
+**Mock technical and HR interviews with rubric scoring, model answers, and on-device computer-vision proctoring.**
 
-[![Node.js](https://img.shields.io/badge/Node.js-v24.19.0-green.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-v18.3.1-blue.svg)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-v6.0.7-purple.svg)](https://vitejs.dev/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v3.4.17-38bdf8.svg)](https://tailwindcss.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-brightgreen.svg)](https://www.mongodb.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+MockVue lets candidates (campus placements, SDE/frontend/backend/data roles) practice timed interviews by typing or speaking.
+Every answer is scored out of 100 on a four-part rubric, compared against reference concepts, and paired with a model answer.
+Sessions run in full-screen and are proctored by MediaPipe face-landmark and object-detection models that run **entirely in the
+browser** — no video, images, or audio ever leave the device.
 
 ---
 
-## 1. Executive Summary & Problem Statement
+## Features
 
-College placement preparation frequently suffers from a critical gap: students either solve disconnected algorithmic problems on competitive programming sites without verbalizing their thought processes, or they experience high stress during real interviews due to unfamiliarity with timed, question-by-question technical evaluations.
-
-**MockVue** bridges this gap by providing an end-to-end, AI-powered interview platform designed specifically for campus placements and technical evaluations.
-
-### Key Capabilities:
-1. **Dynamic Question Generation:** Adapts questions dynamically to target roles (SDE, Frontend, Backend, Full Stack, Data Analyst), topic domains (DSA, DBMS, OS, Networks, System Design), and difficulty tiers (Easy, Medium, Hard).
-2. **Dual-Mode Answer Submission:** Supports both typed structured explanations and live speech-to-text voice dictation using browser Web Speech APIs.
-3. **4-Tier Semantic Evaluation Rubric:** Evaluates responses out of 100 points based on:
-   - **Technical Correctness (40%)**
-   - **Relevance (20%)**
-   - **Completeness & Edge Cases (20%)**
-   - **Clarity & Structure (20%)**
-4. **Anti-Cheating & Assessment Integrity:** Reference answers and grading rubrics are strictly sanitized and concealed on the server until the session is completed.
-5. **Privacy-Preserving Focus Monitoring:** Tracks candidate presence and multi-face alerts locally in the browser without recording or streaming raw video footage.
-6. **Data-Driven Performance Analytics:** Aggregates real MongoDB records to compute score trajectories over time, topic proficiency bars, and personalized next-interview recommendations.
+| Area | What you get |
+| --- | --- |
+| **Interviews** | 8 roles · 13 topics · Easy/Medium/Hard · Technical, Mixed, Behavioral (STAR) or HR · 1–10 questions · 5–90 min |
+| **Answering** | Typed answers or speech-to-text dictation (Web Speech API), autosaved drafts, question navigator, skip & return |
+| **Scoring** | Technical correctness 40 · Relevance 20 · Completeness 20 · Clarity 20 — with covered/missed concepts, gaps, feedback and a model answer |
+| **AI providers** | Google Gemini or OpenAI for semantic grading; an offline question bank + rubric evaluator when no key is configured |
+| **Computer vision** | Face presence, multiple faces, head pose, eye gaze (calibrated per user), phone detection, extra people, voice while silent |
+| **Exam rules** | Full-screen lock, tab/app switching, copy/paste/devtools blocking, 5-warning limit, server-side time limit |
+| **Reports** | Score ring, rubric breakdown, per-question review, proctoring summary & timeline, print/PDF |
+| **Progress** | Score trend, topic and criterion averages, difficulty breakdown, streaks, recommendations |
+| **UX** | Light/dark/system theme, responsive down to 360px, keyboard accessible, reduced-motion support |
 
 ---
 
-## 2. System Architecture & Tech Stack
+## Quick start
 
-```text
-                            ┌──────────────────────────────────────────────┐
-                            │              BROWSER / CLIENT                │
-                            │  React 18 • Vite • Tailwind • Recharts • STT │
-                            └──────────────────────┬───────────────────────┘
-                                                   │
-                                      HTTPS / REST (JWT Bearer)
-                                                   │
-                            ┌──────────────────────▼───────────────────────┐
-                            │             EXPRESS API BACKEND              │
-                            │  Security Guard • Engine • Rubric Evaluator  │
-                            └───────┬──────────────┬──────────────┬────────┘
-                                    │              │              │
-                   Mongoose / ODM   │              │ Strategy     │ Local Privacy
-                                    │              │ Pattern      │ Telemetry
-           ┌────────────────────────▼───┐   ┌──────▼──────┐   ┌───▼─────────────────┐
-           │     MONGODB DATABASE       │   │  AI SERVICE │   │  FOCUS MONITORING   │
-           │ Users, Interviews, Answers,│   │(Gemini / OAI│   │  (MediaPipe Client  │
-           │ Questions, MonitoringLogs  │   │ / Fallback) │   │   Presence Engine)  │
-           └────────────────────────────┘   └─────────────┘   └─────────────────────┘
-```
+Requirements: **Node.js 20.6+**. MongoDB is optional in development (an in-memory instance starts automatically).
 
-### Technology Breakdown:
-* **Frontend:** React 18, Vite 6, Tailwind CSS 3 (Dark/Light mode design system), React Router 6, Axios, Recharts, Lucide Icons, Canvas Confetti.
-* **Backend:** Node.js (v24), Express 4, Mongoose 8, JWT, bcryptjs, Helmet, CORS, Express-Rate-Limit, Morgan.
-* **Database Resilience:** Standard MongoDB with automatic in-memory fallback (`mongodb-memory-server`) during development and offline viva demonstrations.
-* **AI Layer:** Provider-agnostic adapter decoupling business logic from external LLMs (Google Gemini, OpenAI GPT-4o-mini, or Curated Placement Bank).
-
----
-
-## 3. Database Schema Design
-
-* **`User`:** Identity, bcrypt password hash, placement preferences (`targetRole`, `experienceLevel`, `preferredTopics`, `bio`).
-* **`Interview`:** Session status state machine (`created` → `in_progress` → `completed`), question references, overall score, timestamp metrics.
-* **`Question`:** Text, topic, difficulty, type, reference concepts, evaluation criteria (sanitized during active interview).
-* **`Answer`:** Candidate response, overall rubric score (0–100), 4-tier criteria breakdown, identified concepts, missing concepts, constructive feedback, and model answer.
-* **`MonitoringEvent`:** Presence events (`no_face_detected`, `multiple_faces_detected`, `tab_switched`), timestamps, durations, confidence scores.
-
----
-
-## 4. API Endpoints
-
-### Authentication
-* `POST /api/auth/register` — Register candidate account & issue JWT.
-* `POST /api/auth/login` — Authenticate credentials & return session token.
-* `GET /api/auth/me` — Fetch authenticated profile.
-
-### Candidate Profile
-* `GET /api/users/profile` — Fetch candidate settings and preferences.
-* `PUT /api/users/profile` — Update target role, experience level, topics, and bio.
-
-### Interview Engine
-* `POST /api/interviews/generate` — Generate dynamic AI placement questions & initialize interview.
-* `GET /api/interviews/:id` — Fetch interview session (questions sanitized during active state).
-* `POST /api/interviews/:id/start` — Transition status to `in_progress` and start timer.
-* `POST /api/interviews/:id/answer` — Submit answer, evaluate against rubric, and progress pointer.
-* `POST /api/interviews/:id/complete` — Finalize session and compute cumulative score.
-* `GET /api/interviews/history` — Retrieve candidate's past interview sessions.
-* `GET /api/interviews/:id/report` — Fetch comprehensive end-of-interview assessment report.
-
-### Analytics & Monitoring
-* `GET /api/analytics/overview` — Aggregated counts, mean score, and practice duration.
-* `GET /api/analytics/performance` — Chronological score trends and topic proficiency bars.
-* `POST /api/interviews/:id/monitoring` — Log client-side presence/focus event.
-
----
-
-## 5. Local Setup & Quick Start
-
-### Prerequisites
-* Node.js v18+ (tested on v24.19)
-* npm v9+
-
-### 1. Clone & Install
 ```bash
-# Clone the repository
-git clone https://github.com/mockvue/mockvue.git
-cd mockvue
-
-# Install all dependencies (root, server, and client)
 npm run install:all
 ```
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env` in `server/`:
 ```bash
 cp server/.env.example server/.env
 ```
 
-*(Note: MockVue runs out-of-the box using its curated offline placement bank and automatic in-memory MongoDB without requiring an external DB installation or paid API keys).*
-
-### 3. Launch the Platform
 ```bash
-# Run both client and server concurrently
 npm run dev
 ```
 
-* **Client:** `http://localhost:5173`
-* **API Server:** `http://localhost:5000`
-* **Healthcheck:** `http://localhost:5000/api/health`
+- App: http://localhost:5173 · API: http://localhost:5000/api/health
+- Demo accounts (seeded outside production): `candidate@mockvue.edu` / `password123` and `megenta.point@gmail.com` / `password123`.
+  The sign-in page offers them as one-click buttons when the server has seeded them.
+
+`npm install` in `client/` also self-hosts the computer-vision runtime (copies MediaPipe WASM, downloads ~8 MB of models into
+`client/public/`). If that download fails, the app loads the same files from the public CDN at runtime.
+
+> The camera only works on `https://` or `http://localhost`.
 
 ---
 
-## 6. Automated Testing Suite
+## Architecture
 
-MockVue includes automated end-to-end integration tests:
+```text
+┌────────────────────────────── Browser ───────────────────────────────┐
+│ React 18 · Vite · Tailwind (token-based light/dark) · Recharts        │
+│                                                                       │
+│  Interview room                                                       │
+│   camera ─► ProctoringEngine ── FaceLandmarker (478 pts, blendshapes, │
+│   mic   ─►   (on-device)     │   head-pose matrix)       ~5–15 fps    │
+│              │               └─ ObjectDetector (phone, person) ~1 fps │
+│              ▼                                                        │
+│        ProctoringRules (time-based, cooldowns, calibration baseline)  │
+│              │ violations (JSON only)          useExamLockdown        │
+│              ▼                                  (full-screen, tabs,    │
+└──────────────┼──────────────────────────────── clipboard, devtools) ──┘
+               │ HTTPS · JWT
+┌──────────────▼──────────────────── Express API ──────────────────────┐
+│ auth · interviews (state machine, deadlines) · monitoring · analytics│
+│ AIServiceManager ── Gemini │ OpenAI │ offline bank + rubric evaluator │
+└──────────────┬────────────────────────────────────────────────────────┘
+               ▼
+           MongoDB (Users, Interviews, Questions, Answers, MonitoringEvents)
+```
+
+### Interview lifecycle
+
+`created` → `in_progress` (timer starts when the candidate enters full-screen) → `completed` | `terminated` (proctoring) |
+`abandoned` (never started). The server owns the clock: answers after the deadline (+60 s grace) are rejected and overdue
+sessions are closed automatically. The overall score is the mean across **all** questions — unanswered questions count as zero,
+so ending early never inflates a score.
+
+---
+
+## Computer-vision proctoring
+
+All analysis happens in `client/src/services/cv/`:
+
+| Module | Role |
+| --- | --- |
+| `visionRuntime.js` | Loads MediaPipe Tasks Vision (self-hosted first, CDN fallback). Uses the GPU only when a hardware GPU is present — on software WebGL (SwiftShader/llvmpipe) the CPU path is ~4× faster and the object detector only works on CPU. |
+| `ProctoringEngine.js` | Runs face landmarks every frame (cadence adapts so inference uses ≤40 % of the main thread), objects ~1×/s, lighting ~1×/s, mic level continuously. Recovers from graph errors; degrades to basic presence detection if MediaPipe can't run. |
+| `geometry.js` | Head yaw/pitch/roll from the facial transformation matrix (column-major, verified on real faces), gaze from eye blendshapes, framing hints, attention classification. |
+| `proctoringRules.js` | Pure, unit-tested rules engine using wall-clock time. |
+| `policy.js` | Every threshold in one place. |
+
+**Rules** (defaults in `policy.js`):
+
+| Condition | Must persist | Result |
+| --- | --- | --- |
+| No face in view | 10 s | warning |
+| More than one face / another person detected | 2 s / 2.5 s | warning |
+| Phone in view | 1.5 s | warning |
+| Head or eyes turned away (relative to calibration) | 5 s | warning |
+| Voice-level audio while the candidate's mouth isn't moving | 6 s | warning |
+| Brief focus loss · blocked shortcut · paste · right-click | — | warning |
+| Leaving full-screen · switching tabs · switching apps (> 1.5 s) | — | ends interview |
+| 5th warning | — | ends interview |
+
+**Fairness safeguards:** a 4 s start grace, a 15 s cool-down per rule, a 4 s minimum gap between warnings, looking down at the
+keyboard while typing is allowed, blinks don't count as looking away, and a 3-second calibration learns each person's neutral
+head pose so an off-centre webcam doesn't count against them. The server — not the client — decides which events are warnings
+or critical.
+
+**Privacy:** frames are analysed in memory and discarded. Only event types, timestamps, a few numbers (e.g. head angle, face count)
+and a session summary (% time present / attentive) are sent. Proctoring signals are indicators for practice, not proof of misconduct.
+
+---
+
+## Configuration
+
+`server/.env` (see `server/.env.example`):
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `JWT_SECRET` | dev-only value | **Required in production** (16+ chars); the server refuses to start without it. |
+| `JWT_EXPIRES_IN` | `7d` | |
+| `MONGODB_URI` | `mongodb://127.0.0.1:27017/mockvue` | |
+| `ALLOW_IN_MEMORY_DB` | `true` (non-prod) | Falls back to `mongodb-memory-server` when MongoDB is unreachable. |
+| `SEED_DEMO_DATA` | `true` (non-prod) | Demo accounts with sample sessions. |
+| `AI_PROVIDER` | `fallback` | `gemini` or `openai` (needs `AI_API_KEY`). |
+| `AI_MODEL` | provider default | `gemini-2.5-flash` / `gpt-4o-mini`. |
+| `AI_TIMEOUT_MS` | `20000` | Requests are aborted and fall back to the offline evaluator. |
+| `SERVE_CLIENT` | `true` in prod | Serves `client/dist` with a strict Content-Security-Policy. |
+| `TRUST_PROXY` | `false` | Set behind a reverse proxy so rate limits see real client IPs. |
+
+---
+
+## Testing
 
 ```bash
-# Run AI Integration & Fallback Tests
-node server/tests/ai_service.test.js
+npm test
+```
 
-# Run Full 10-Step End-to-End User Flow Test
-node server/tests/e2e_full_flow.test.js
+Runs 49 unit tests (no database needed):
+
+- **Server** (`server/tests/unit`): offline evaluator calibration (strong ≫ partial ≫ short; gibberish, repetition and off-topic
+  answers score low; STAR scoring), LLM output normalisation, JSON repair, question selection per topic/type, provider fallback,
+  score aggregation, deadlines, proctoring-summary sanitisation, event severities, JWT payloads.
+- **Client** (`client/src/services/cv/cv.test.js`): head-pose maths, gaze, framing, attention classification with calibration,
+  rules timing at 16 ms and 200 ms frame intervals, cooldowns, grace period, audio dBFS, presence fallback.
+
+```bash
+npm run test:e2e
+```
+
+Full API flow against a real MongoDB (in-memory by default, or set `MONGODB_URI`): auth and token expiry, sanitised questions,
+report gating, scoring, warning limits, critical events, server-side time limit, ownership checks.
+
+---
+
+## Production
+
+```bash
+npm run build
+```
+
+```bash
+NODE_ENV=production JWT_SECRET=<long-random> MONGODB_URI=<uri> npm start
+```
+
+Express serves the API and the built client from one process. Put it behind HTTPS (required for camera access).
+
+---
+
+## API
+
+All routes except auth and health need `Authorization: Bearer <token>`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | Status, DB state, AI provider |
+| POST | `/api/auth/register` · `/api/auth/login` | Rate-limited; returns a JWT |
+| GET | `/api/auth/me` | Current user |
+| GET/PUT | `/api/users/profile` | Profile |
+| PUT | `/api/users/password` | Change password |
+| POST | `/api/interviews/generate` | Create an interview |
+| GET | `/api/interviews/history` | List with answered counts |
+| GET / DELETE | `/api/interviews/:id` | Session (reference keys hidden until it ends) / delete with all data |
+| POST | `/api/interviews/:id/start` | Start the timer; returns `deadline` and `serverTime` |
+| POST | `/api/interviews/:id/answer` | Submit and evaluate an answer |
+| POST | `/api/interviews/:id/complete` | Finish (optionally with a proctoring summary) |
+| GET | `/api/interviews/:id/report` | Full report (409 until the interview ends) |
+| POST/GET | `/api/interviews/:id/monitoring` | Log / list proctoring events |
+| GET | `/api/analytics/overview` · `/api/analytics/performance` | Dashboard and progress data |
+
+---
+
+## Project structure
+
+```text
+client/
+  scripts/setup-vision-assets.mjs   self-hosts MediaPipe WASM + models
+  src/components/{ui,layout,charts,proctoring}
+  src/hooks/        useCamera, useVisionEngine, useDictation, useExamLockdown, useCountdown …
+  src/services/cv/  vision engine, geometry, rules, policy, audio (+ tests)
+  src/pages/        Landing, Auth, Dashboard, Create, Prep, Room, Results, Analytics, History, Profile
+server/
+  src/config/       env, db, constants
+  src/controllers/  auth, user, interview, analytics/monitoring
+  src/services/     interviewLifecycle, ai/ (providers, prompts, evaluator, question bank)
+  tests/unit, tests/e2e
 ```
 
 ---
 
-## 7. Comprehensive Viva Defense Q&A
+## Viva notes
 
-### Q1: Why use an Adapter Pattern for the AI Service layer instead of calling an LLM directly in the controller?
-**Answer:** Directly calling an LLM inside an Express controller creates tight vendor coupling. If an API provider changes its endpoints, pricing, or experiences an outage during an evaluation, the entire application fails. The Adapter Pattern defines a strict `AIProvider` interface (`generateQuestions` and `evaluateAnswer`). Concrete adapters (Gemini, OpenAI, Fallback) implement this interface. If an external API key is invalid or times out (>12s), the `AIServiceManager` catches the error and smoothly falls back to the curated placement bank without crashing the user session.
+**Why an adapter for AI providers?** Controllers depend only on `AIServiceManager`. Any provider error, timeout, malformed JSON or
+out-of-range score falls back to the offline bank/evaluator, and every evaluation is normalised (scores clamped, total recomputed)
+before it reaches the database.
 
-### Q2: How is cheating prevented during active interviews?
-**Answer:** In `interview.controller.js`, when a candidate queries `GET /api/interviews/:id`, the backend inspects `interview.status`. If the interview is `created` or `in_progress`, the server strips `referenceConcepts` and `evaluationCriteria` from all question objects before dispatching the JSON payload. Only after the interview reaches `status === 'completed'` does the report route expose expected answers and rubric keys.
+**How is cheating limited?** Reference concepts and grading criteria never leave the server until the interview ends (the report
+endpoint is gated too). The server enforces the time limit, decides event severity, and counts warnings atomically.
 
-### Q3: Why run focus monitoring locally on the client instead of streaming video to a server?
-**Answer:** Streaming 30 FPS video to a Node.js or Python backend consumes enormous server bandwidth, introduces high cloud latency, and creates major privacy liabilities. MockVue executes computer vision locally in the browser using MediaPipe / WebAssembly. Frames are analyzed on the candidate's GPU, and only lightweight telemetry events (e.g. `no_face_detected` for 6s) are dispatched via JSON to the backend. Raw video footage is never stored.
+**Why on-device computer vision?** Streaming video to a server costs bandwidth, adds latency and creates a privacy liability. WASM
+inference keeps raw frames on the candidate's machine; only small JSON events are sent.
 
-### Q4: How does the countdown timer handle page refreshes or background browser throttling?
-**Answer:** Rather than relying on simple JavaScript `setInterval` counters (which drift when browser tabs are backgrounded or reset on page reload), MockVue uses a **target timestamp architecture**. When the interview starts, the server and client store the absolute Unix timestamp (`targetEndTime = Date.now() + duration * 60 * 1000`). On every interval tick or reload, remaining seconds are calculated as `Math.max(0, targetEndTime - Date.now())`. This ensures accurate, jump-free time tracking regardless of reloads or tab switches.
+**Why can't the old timer drift?** The countdown is computed from the server's `deadline` and corrected for client clock skew via
+`serverTime`, so reloads, background tabs and device changes don't affect it.
 
-### Q5: How does the database handle local development if no local MongoDB service is installed?
-**Answer:** In `server/src/config/db.js`, the connection attempts to reach `MONGODB_URI` with a 3-second timeout. If the connection fails in `development` mode, it dynamically initializes an embedded `mongodb-memory-server` instance. This guarantees that evaluators and professors can run the project on any computer without pre-installing MongoDB.
-
----
-
-## 8. Academic Integrity & Ethics
-
-* **Focus Monitoring Disclaimer:** All computer vision telemetry is strictly framed as engagement and presence indicators. The system makes no claims regarding lie detection, intent, or conclusive cheating proof.
-* **Rubric Transparency:** Candidates receive transparent breakdowns across 4 distinct criteria so they can systematically prepare for campus placement interviews.
-
----
-*Built with ❤️ for B.Tech Campus Placement Success.*
+**What if the offline evaluator is gamed?** It measures concept coverage, overlap with the question, structure and depth, and
+applies quality gates for short, repetitive or non-word text — there is no minimum score. It is honest about its limits: reports say
+when the offline engine was used and suggest configuring an AI provider for semantic grading.
