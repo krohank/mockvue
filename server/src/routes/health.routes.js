@@ -1,10 +1,13 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { env } from '../config/env.js';
+import { speechStatus } from '../services/speechService.js';
+import { aiService } from '../services/ai/AIProviderFactory.js';
 
 const router = express.Router();
 
-router.get('/health', (req, res) => {
+router.get('/health', async (req, res, next) => {
+  try {
   const dbStatus = {
     0: 'disconnected',
     1: 'connected',
@@ -23,16 +26,14 @@ router.get('/health', (req, res) => {
       name: mongoose.connection.name || 'none',
       host: mongoose.connection.host || 'none',
     },
-    ai: {
-      configuredProvider: env.AI_PROVIDER,
-      model: env.AI_MODEL,
-      hasApiKey: Boolean(env.AI_API_KEY),
-    },
+    ai: await aiService.status(),
     monitoring: {
       mode: env.CV_MONITORING_MODE,
     },
+    speech: speechStatus(),
     environment: env.NODE_ENV,
   });
+  } catch (error) { next(error); }
 });
 
 export default router;

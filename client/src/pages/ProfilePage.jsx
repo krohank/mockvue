@@ -54,7 +54,7 @@ export const ProfilePage = () => {
         preferredTopics,
         bio,
       });
-      setStatusMessage({ type: 'success', text: 'Candidate profile settings saved successfully.' });
+      setStatusMessage({ type: 'success', text: 'Changes saved.' });
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.message || 'Failed to update profile.' });
     } finally {
@@ -66,13 +66,13 @@ export const ProfilePage = () => {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in font-sans">
       <div className="pb-5 border-b border-[#DED9D0] dark:border-[#332F2A]">
         <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-          CANDIDATE DOSSIER
+          Your account
         </span>
         <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-          Candidate Profile & Synthesis Calibration
+          Profile
         </h1>
         <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5 font-mono">
-          CALIBRATION SETTINGS FOR QUESTION SYNTHESIS & TARGET PLACEMENT TRACKS
+          Choose the role and topics you want to practice.
         </p>
       </div>
 
@@ -96,16 +96,16 @@ export const ProfilePage = () => {
       <form onSubmit={handleSave} className="space-y-6">
         <Card className="shadow-paper">
           <CardHeader
-            title="General Identification"
-            subtitle="Academic and placement candidate profile"
+            title="About you"
+            subtitle="Your details and interview preferences"
           />
           <CardBody className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
+                <label htmlFor="profile-name" className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
                   Full Name
                 </label>
-                <input
+                <input id="profile-name"
                   type="text"
                   required
                   value={name}
@@ -115,10 +115,10 @@ export const ProfilePage = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
+                <label htmlFor="profile-email" className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
                   Email Address
                 </label>
-                <input
+                <input id="profile-email"
                   type="email"
                   disabled
                   value={user?.email || ''}
@@ -129,10 +129,10 @@ export const ProfilePage = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Target Job Track
+                <label htmlFor="profile-role" className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
+                  Target role
                 </label>
-                <select
+                <select id="profile-role"
                   value={targetRole}
                   onChange={(e) => setTargetRole(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 font-sans"
@@ -149,10 +149,10 @@ export const ProfilePage = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                  Experience Tier
+                <label htmlFor="profile-experience" className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
+                  Experience level
                 </label>
-                <select
+                <select id="profile-experience"
                   value={experienceLevel}
                   onChange={(e) => setExperienceLevel(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 font-sans"
@@ -166,14 +166,14 @@ export const ProfilePage = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
-                Target Objective / Academic Bio
+              <label htmlFor="profile-bio" className="block text-xs font-mono font-medium text-[#171717] dark:text-[#F7F4EE] uppercase tracking-wider mb-1.5">
+                About you
               </label>
-              <textarea
+              <textarea id="profile-bio"
                 rows="3"
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="State your placement focus, target tier-1 companies, or specific technical proficiencies..."
+                placeholder="What role are you preparing for? What would you like to improve?"
                 className="w-full px-3.5 py-2 rounded-[8px] border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/30 leading-relaxed font-sans"
               />
             </div>
@@ -183,8 +183,8 @@ export const ProfilePage = () => {
         {/* Preferred Placement Topics */}
         <Card className="shadow-paper">
           <CardHeader
-            title="Interview Syllabus Focus Domains"
-            subtitle="Prioritize these domains during session synthesis"
+            title="Preferred topics"
+            subtitle="These topics will be selected by default for new interviews."
           />
           <CardBody>
             <div className="flex flex-wrap gap-2">
@@ -212,7 +212,7 @@ export const ProfilePage = () => {
 
         <div className="flex justify-end pt-1">
           <Button type="submit" size="md" icon={Save} isLoading={isSaving}>
-            Save Preferences
+            Save changes
           </Button>
         </div>
       </form>

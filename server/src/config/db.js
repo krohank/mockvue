@@ -1,57 +1,47 @@
 import mongoose from 'mongoose';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { BSON } from 'mongodb';
 import { env } from './env.js';
 import { seedDemoUsers } from '../utils/seedData.js';
 
-let mongoMemoryServerInstance = null;
+const dataRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.local-data');
+let localServer;
 
 export const connectDB = async () => {
+  mongoose.set('strictQuery', false);
   try {
-    mongoose.set('strictQuery', false);
-
-    console.log(`[DB] Attempting MongoDB connection to: ${env.MONGODB_URI.replace(/:\/\/[^:]+:[^@]+@/, '://***:***@')}`);
-
-    // Try standard URI with short timeout for quick fallback
-    await mongoose.connect(env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 3000,
+    await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 3000 });
+  } catch (error) {
+    if (!env.isDev) throw error;
+    await mongoose.disconnect();
+    const { MongoMemoryServer } = await import('mongodb-memory-server');
+    const dbPath = path.join(dataRoot, 'mongodb');
+    await fs.mkdir(dbPath, { recursive: true });
+    localServer = await MongoMemoryServer.create({
+      instance: { dbPath, dbName: 'mockvue', storageEngine: 'wiredTiger', ip: '127.0.0.1' },
     });
-
-    console.log(`[DB] MongoDB Connected Successfully: ${mongoose.connection.host}/${mongoose.connection.name}`);
-    await seedDemoUsers();
-    return { type: 'standard', host: mongoose.connection.host };
-  } catch (err) {
-    console.warn(`[DB] Standard MongoDB connection failed: ${err.message}`);
-
-    if (env.isDev) {
-      console.log('[DB] Development mode active: Initializing in-memory MongoDB fallback...');
+    await mongoose.connect(localServer.getUri('mockvue'));
+    // Import the old temporary database once, preserving accounts and interview history.
+    if (await mongoose.connection.db.collection('users').countDocuments() === 0) {
       try {
-        const { MongoMemoryServer } = await import('mongodb-memory-server');
-        mongoMemoryServerInstance = await MongoMemoryServer.create();
-        const memoryUri = mongoMemoryServerInstance.getUri();
-
-        await mongoose.connect(memoryUri);
-        console.log(`[DB] In-Memory MongoDB Initialized & Connected at: ${memoryUri}`);
-        await seedDemoUsers();
-        return { type: 'in-memory', host: 'in-memory-db' };
-      } catch (memErr) {
-        console.error(`[DB] Failed to initialize in-memory fallback MongoDB: ${memErr.message}`);
-        throw memErr;
+        const snapshot = BSON.EJSON.parse(await fs.readFile(path.join(dataRoot, 'pre-audit-backup.json'), 'utf8'));
+        for (const [collection, docs] of Object.entries(snapshot)) {
+          if (docs.length) await mongoose.connection.db.collection(collection).insertMany(docs);
+        }
+        console.log('[DB] Restored previous local data.');
+      } catch (restoreError) {
+        if (restoreError.code !== 'ENOENT') throw restoreError;
       }
-    } else {
-      console.error('[DB] Fatal Database Error in production environment.');
-      throw err;
     }
+    console.log('[DB] Persistent local database: ' + dbPath);
   }
+  if (env.isDev) await seedDemoUsers();
+  console.log('[DB] Connected: ' + mongoose.connection.name);
 };
 
 export const disconnectDB = async () => {
-  try {
-    await mongoose.disconnect();
-    if (mongoMemoryServerInstance) {
-      await mongoMemoryServerInstance.stop();
-      console.log('[DB] In-Memory MongoDB Server Stopped.');
-    }
-    console.log('[DB] Database Disconnected.');
-  } catch (err) {
-    console.error(`[DB] Error during disconnection: ${err.message}`);
-  }
+  await mongoose.disconnect();
+  if (localServer) await localServer.stop({ doCleanup: false, force: false });
 };

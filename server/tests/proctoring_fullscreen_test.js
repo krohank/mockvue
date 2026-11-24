@@ -62,6 +62,7 @@ async function runProctoringTest() {
     topics: ['Operating Systems', 'System Design'],
     difficulty: 'Medium',
     questionCount: 3,
+    mode: 'assessment',
   }, token);
   const interviewId = intRes.interviewId;
   console.log(`   ✓ Interview session created: [${interviewId}]`);

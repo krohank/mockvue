@@ -63,6 +63,15 @@
 }
 
 @layer components {
+  .mv-input {
+    @apply w-full rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] px-3.5 py-3 text-sm text-[#171717] dark:text-[#F7F4EE] outline-none transition-colors focus:border-[#7A263A] focus:ring-2 focus:ring-[#7A263A]/15 disabled:opacity-60;
+  }
+  .mv-label {
+    @apply block text-sm font-medium mb-2 text-[#171717] dark:text-[#F7F4EE];
+  }
+  .mv-alert {
+    @apply flex items-start gap-2.5 rounded-xl border border-[#E8C4C4] dark:border-[#A33B3B]/40 bg-[#FAF0F0] dark:bg-[#A33B3B]/10 p-4 text-sm text-[#A33B3B] dark:text-[#E59797];
+  }
   /* Warm Ivory Architectural Cards */
   .stitch-card {
     @apply bg-[#FFFDF9] dark:bg-[#1C1916] border border-[#DED9D0] dark:border-[#332F2A] rounded-xl shadow-[0_1px_3px_0_rgba(23,23,23,0.04),0_1px_2px_-1px_rgba(23,23,23,0.02)] transition-all duration-150;
@@ -103,4 +112,8 @@
   .btn-tactile {
     @apply active:translate-y-[1px] transition-transform duration-75 select-none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

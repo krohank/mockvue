@@ -1,6 +1,8 @@
 import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
+import { startSpeech, stopSpeech } from './services/speechService.js';
+import { startEvaluationWorker, stopEvaluationWorker } from './services/evaluationQueue.js';
 
 let server;
 
@@ -8,6 +10,8 @@ const startServer = async () => {
   try {
     // 1. Connect to Database
     await connectDB();
+    startEvaluationWorker();
+    startSpeech().catch((error) => console.warn('[Speech]', error.message));
 
     // 2. Start HTTP Listener
     server = app.listen(env.PORT, () => {
@@ -27,10 +31,12 @@ const startServer = async () => {
 
 // Graceful Shutdown
 const handleShutdown = async (signal) => {
+  stopSpeech();
   console.log(`\n[SHUTDOWN] Received ${signal}. Closing HTTP server and database...`);
   if (server) {
     server.close(async () => {
       console.log('[SHUTDOWN] HTTP server closed.');
+      await stopEvaluationWorker();
       await disconnectDB();
       process.exit(0);
     });

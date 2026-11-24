@@ -38,3 +38,7 @@ Thumbs.db
 
 # In-memory Mongo temp data
 .mongo-bin/
+
+# Local development data and speech models
+.local-data/
+__pycache__/

@@ -1,35 +1,29 @@
 export const cleanAndParseJSON = (rawText) => {
-  if (!rawText || typeof rawText !== 'string') {
-    throw new Error('AI output is empty or not a string');
-  }
-
-  let cleaned = rawText.trim();
-
-  // Strip markdown code fences if present (e.g., ```json ... ``` or ``` ...)
-  const fenceRegex = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
-  const match = cleaned.match(fenceRegex);
-  if (match && match[1]) {
-    cleaned = match[1].trim();
-  }
-
-  // Remove potential trailing commas before closing braces/brackets
-  cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
-
-  try {
-    return JSON.parse(cleaned);
-  } catch (initialErr) {
-    // Attempt secondary regex search for first valid JSON array or object
-    const jsonMatch = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
-    if (jsonMatch) {
-      try {
-        const repaired = jsonMatch[0].replace(/,\s*([}\]])/g, '$1');
-        return JSON.parse(repaired);
-      } catch (secondErr) {
-        throw new Error(`Failed to parse AI JSON response: ${secondErr.message}. Raw preview: ${cleaned.slice(0, 150)}...`);
+  if (!rawText || typeof rawText !== 'string') throw new Error('AI output is empty or not a string.');
+  const cleaned = rawText.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1');
+  try { return JSON.parse(cleaned); } catch { /* Try a JSON value surrounded by prose. */ }
+  const start = cleaned.search(/[\[{]/);
+  if (start >= 0) {
+    const stack = []; let quoted = false, escaped = false;
+    for (let i = start; i < cleaned.length; i++) {
+      const c = cleaned[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === '"') quoted = false;
+        continue;
+      }
+      if (c === '"') quoted = true;
+      else if (c === '{' || c === '[') stack.push(c);
+      else if (c === '}' || c === ']') {
+        if (stack.pop() !== (c === '}' ? '{' : '[')) break;
+        if (!stack.length) {
+          try { return JSON.parse(cleaned.slice(start, i + 1)); } catch { break; }
+        }
       }
     }
-    throw new Error(`Malformed AI JSON: ${initialErr.message}. Raw preview: ${cleaned.slice(0, 150)}...`);
   }
+  throw new Error('Local AI returned malformed JSON.');
 };
 
 export const validateQuestionsSchema = (data) => {
@@ -50,6 +44,9 @@ export const validateQuestionsSchema = (data) => {
       difficulty: ['Easy', 'Medium', 'Hard'].includes(q.difficulty) ? q.difficulty : 'Medium',
       type: ['Technical', 'HR', 'Behavioral'].includes(q.type) ? q.type : 'Technical',
       referenceConcepts: Array.isArray(q.referenceConcepts) ? q.referenceConcepts : [],
+      referenceAnswer: q.referenceAnswer || '',
+      answerSource: 'local-model',
+      followUpQuestions: Array.isArray(q.followUpQuestions) ? q.followUpQuestions : [],
       evaluationCriteria: Array.isArray(q.evaluationCriteria) ? q.evaluationCriteria : [
         'Accuracy of core explanation',
         'Technical depth and terminology',

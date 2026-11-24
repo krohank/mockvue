@@ -36,6 +36,10 @@ const questionSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    bankId: String,
+    referenceAnswer: { type: String, default: '' },
+    answerSource: { type: String, enum: ['curated', 'local-model', 'outline'], default: 'outline' },
+    followUpQuestions: { type: [String], default: [] },
     evaluationCriteria: {
       type: [String],
       default: [],

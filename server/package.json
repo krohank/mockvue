@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "node tests/e2e_full_flow.test.js && node tests/proctoring_fullscreen_test.js"
+    "test": "node --test tests/regression.test.js tests/localAI.test.js tests/questionLogic.test.js",
+    "test:legacy": "node tests/e2e_full_flow.test.js && node tests/proctoring_fullscreen_test.js",
+    "test:speech": "node --test tests/speech.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

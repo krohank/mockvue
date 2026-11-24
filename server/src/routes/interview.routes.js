@@ -4,6 +4,7 @@ import {
   getInterview,
   startInterview,
   submitAnswer,
+  saveDraft,
   completeInterview,
   getHistory,
   getReport,
@@ -23,6 +24,7 @@ router.get('/history', getHistory);
 router.get('/:id', getInterview);
 router.post('/:id/start', startInterview);
 router.post('/:id/answer', submitAnswer);
+router.put('/:id/draft', saveDraft);
 router.post('/:id/complete', completeInterview);
 router.get('/:id/report', getReport);
 

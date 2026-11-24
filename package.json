@@ -1,7 +1,7 @@
 {
   "name": "mockvue-root",
   "version": "1.0.0",
-  "description": "MockVue — AI-Powered Mock Interview & Evaluation Platform",
+  "description": "MockVue \u00e2\u20ac\u201d AI-Powered Mock Interview & Evaluation Platform",
   "private": true,
   "scripts": {
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
@@ -9,7 +9,10 @@
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build:client": "npm run build --prefix client",
-    "start:server": "npm run start --prefix server"
+    "start:server": "npm run start --prefix server",
+    "test": "npm test --prefix server && npm test --prefix client",
+    "ai:start": "lms server start --bind 127.0.0.1 --port 1234",
+    "ai:status": "node server/scripts/local-ai-status.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

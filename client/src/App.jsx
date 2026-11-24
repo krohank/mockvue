@@ -1,4 +1,5 @@
 import React from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AppLayout } from './components/layout/AppLayout';
@@ -19,7 +20,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 
 export const App = () => {
   return (
-    <ThemeProvider>
+    <ErrorBoundary><ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -48,7 +49,7 @@ export const App = () => {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
-    </ThemeProvider>
+    </ThemeProvider></ErrorBoundary>
   );
 };
 

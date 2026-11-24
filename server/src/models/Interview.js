@@ -54,6 +54,15 @@ const interviewSchema = new mongoose.Schema(
       type: Number,
       default: 20,
     },
+    mode: { type: String, enum: ['practice', 'assessment'], default: 'practice' },
+    generationNotice: { type: String, default: null },
+    draft: {
+      questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+      responseText: { type: String, maxlength: 20000 },
+      responseType: { type: String, enum: ['text', 'voice'] },
+      timeSpentSeconds: Number,
+      savedAt: Date,
+    },
     currentQuestionIndex: {
       type: Number,
       default: 0,
@@ -64,6 +73,7 @@ const interviewSchema = new mongoose.Schema(
       max: 100,
       default: null,
     },
+    scoreStatus: { type: String, enum: ['pending', 'ungraded', 'graded'], default: null },
     questions: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -82,6 +92,7 @@ const interviewSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    questionProvider: { type: String, enum: ['local', 'fallback'], default: null },
   },
   {
     timestamps: true,

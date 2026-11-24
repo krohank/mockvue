@@ -14,14 +14,14 @@ export const Navbar = () => {
   const navLinks = isAuthenticated
     ? [
         { name: 'Dashboard', path: '/dashboard', icon: Compass },
-        { name: 'Analytics', path: '/analytics', icon: Compass },
+        { name: 'Progress', path: '/analytics', icon: Compass },
         { name: 'History', path: '/history', icon: Compass },
         { name: 'Profile', path: '/profile', icon: User },
       ]
     : [
-        { name: 'Architecture', path: '/#architecture' },
-        { name: 'Rubric Engine', path: '/#rubric' },
-        { name: 'Viva Defense', path: '/#viva' },
+        { name: 'How it works', path: '/#how-it-works' },
+        { name: 'Scoring', path: '/#feedback' },
+        { name: 'Topics', path: '/#topics' },
       ];
 
   const isActive = (path) => location.pathname === path;
@@ -39,7 +39,7 @@ export const Navbar = () => {
               MockVue
             </span>
             <span className="font-mono text-[9px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-[#F0ECE4] dark:bg-[#24201C] text-[#68645E] dark:text-[#9E988F] border border-[#DED9D0] dark:border-[#332F2A]">
-              EVALUATION VIVA
+              Interview practice
             </span>
           </div>
         </Link>
@@ -50,6 +50,7 @@ export const Navbar = () => {
             <Link
               key={link.name}
               to={link.path}
+              reloadDocument={link.path.startsWith('/#')}
               className={`px-3 py-1.5 rounded-[8px] text-xs font-medium tracking-tight transition-colors ${
                 isActive(link.path)
                   ? 'text-[#7A263A] dark:text-[#E8A5B2] bg-[#FAF0F2] dark:bg-[#7A263A]/20 border border-[#E8C5CC] dark:border-[#7A263A]/40 font-semibold'
@@ -84,7 +85,7 @@ export const Navbar = () => {
               </Link>
               <Link to="/interviews/new">
                 <Button size="sm" icon={Plus}>
-                  New Session
+                  New interview
                 </Button>
               </Link>
               <button
@@ -100,12 +101,12 @@ export const Navbar = () => {
             <div className="flex items-center gap-2">
               <Link to="/login">
                 <Button variant="ghost" size="sm">
-                  Sign In
+                  Sign in
                 </Button>
               </Link>
               <Link to="/register">
                 <Button size="sm" icon={ArrowRight}>
-                  Get Started
+                  Start practicing
                 </Button>
               </Link>
             </div>
@@ -138,6 +139,7 @@ export const Navbar = () => {
             <Link
               key={link.name}
               to={link.path}
+              reloadDocument={link.path.startsWith('/#')}
               onClick={() => setMobileMenuOpen(false)}
               className="block px-3 py-2 rounded-[8px] text-sm font-medium text-[#171717] dark:text-[#F7F4EE] hover:bg-[#F0ECE4] dark:hover:bg-[#24201C]"
             >
@@ -149,22 +151,22 @@ export const Navbar = () => {
               <>
                 <Link to="/interviews/new" onClick={() => setMobileMenuOpen(false)}>
                   <Button className="w-full" size="sm" icon={Plus}>
-                    New Session
+                    New interview
                   </Button>
                 </Link>
                 <Button variant="ghost" size="sm" className="w-full text-[#A33B3B]" onClick={() => { logout(); setMobileMenuOpen(false); }}>
-                  Sign Out
+                  Sign out
                 </Button>
               </>
             ) : (
               <>
                 <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                   <Button variant="outline" size="sm" className="w-full">
-                    Sign In
+                    Sign in
                   </Button>
                 </Link>
                 <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
-                  <Button size="sm" className="w-full">Get Started</Button>
+                  <Button size="sm" className="w-full">Start practicing</Button>
                 </Link>
               </>
             )}

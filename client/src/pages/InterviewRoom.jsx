@@ -1,1158 +1,303 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  Clock, 
-  Send, 
-  ArrowRight, 
-  Mic, 
-  MicOff, 
-  Video, 
-  Award, 
-  Check, 
-  AlertCircle, 
-  Terminal,
-  HelpCircle,
-  ShieldCheck,
-  ShieldAlert,
-  Maximize2,
-  Lock,
-  Eye,
-  Volume2,
-  AlertTriangle,
-  History
-} from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Clock, Check, Video, VideoOff, Volume2, Square, Send, SkipForward, Maximize2, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
-import { ProctoringCVEngine } from '../services/proctoringCV';
+import { AudioAnswer } from '../components/AudioAnswer';
+import { AnswerFeedback, feedbackPending } from '../components/AnswerFeedback';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
+const formatTime = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 export const InterviewRoom = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-
-  // Interview session state
-  const [interview, setInterview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // Active question pointer & answer state
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answerText, setAnswerText] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionStep, setSubmissionStep] = useState('');
-  const [currentEvaluation, setCurrentEvaluation] = useState(null);
-
-  // Reliable Countdown Timer
-  const [secondsRemaining, setSecondsRemaining] = useState(0);
-  const endTimeRef = useRef(null);
-
-  // Per-question timing
-  const [questionStartTime, setQuestionStartTime] = useState(Date.now());
-
-  // Web Speech API for voice dictation
-  const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
-  const recognitionRef = useRef(null);
-
-  // All-Time Camera Access State
-  const [camStream, setCamStream] = useState(null);
-  const [cameraError, setCameraError] = useState('');
-  const camVideoRef = useRef(null);
-  const camStreamRef = useRef(null);
-  const overlayCanvasRef = useRef(null);
-  const cvEngineRef = useRef(null);
-
-  // Advanced Security & Proctoring State
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [hasEnteredExamMode, setHasEnteredExamMode] = useState(false);
-  const [isTerminated, setIsTerminated] = useState(false);
-  const isTerminatedRef = useRef(false);
-  const [terminationReason, setTerminationReason] = useState('');
-
-  // 5-Warning Rule & Live Telemetry
-  const [warnings, setWarnings] = useState([]);
-  const warningsRef = useRef([]);
-  const lastWarningTimeRef = useRef(0);
-  const [activeWarningBanner, setActiveWarningBanner] = useState(null);
-
-  // Real-time CV & Audio Meters
-  const [liveCV, setLiveCV] = useState({
-    faceDetected: true,
-    faceCount: 1,
-    gaze: { centered: true, label: 'CENTERED' },
-    audioDb: 24,
-    isSpeaking: false,
-  });
-
-  const outOfFrameTimerRef = useRef(0);
-  const [outOfFrameSeconds, setOutOfFrameSeconds] = useState(0);
-
-  const gazeDeviationTimerRef = useRef(0);
-  const [gazeDeviationSeconds, setGazeDeviationSeconds] = useState(0);
-
-  const audioAnomalyTimerRef = useRef(0);
-  const multipleFacesTimerRef = useRef(0);
-
-  // 1. HARD TERMINATION HANDLER (Tab Exit, Blur, Fullscreen Exit, or 5 Warnings)
-  const handleTermination = useCallback(async (reasonText, eventType = 'proctoring_violation') => {
-    if (isTerminatedRef.current) return;
-    isTerminatedRef.current = true;
-    setIsTerminated(true);
-    setTerminationReason(reasonText);
-
-    // Stop CV Engine and media streams immediately
-    if (cvEngineRef.current) {
-      cvEngineRef.current.stop();
-    }
-    if (camStreamRef.current) {
-      camStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
-    }
-
-    localStorage.removeItem(`mockvue_int_${id}_idx`);
-    localStorage.removeItem(`mockvue_timer_end_${id}`);
-
+  const { id } = useParams(), navigate = useNavigate(), { user } = useAuth();
+  const [interview, setInterview] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const [currentIndex, setCurrentIndex] = useState(0), [answerText, setAnswerText] = useState(''), [evaluation, setEvaluation] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false), [isFinishing, setIsFinishing] = useState(false), [isStarting, setIsStarting] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false), [draftStatus, setDraftStatus] = useState(''), [finishOpen, setFinishOpen] = useState(false);
+  const [deadline, setDeadline] = useState(null), [secondsLeft, setSecondsLeft] = useState(0), [sessionComplete, setSessionComplete] = useState(false);
+  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement)), [cameraOn, setCameraOn] = useState(false), [cameraError, setCameraError] = useState('');
+  const [speaking, setSpeaking] = useState(false);
+  const video = useRef(null), camera = useRef(null), mounted = useRef(true), usedVoice = useRef(false), answerRef = useRef('');
+  const submitting = useRef(false), finishing = useRef(false), voiceActive = useRef(false), finishRef = useRef(null), serverOffset = useRef(0), questionStarted = useRef(Date.now());
+  const voicePrompt = useRef(false), draftReliable = useRef(true), autoAttempted = useRef(false);
+  const questions = interview?.questions || [], currentQuestion = questions[currentIndex];
+  const started = interview?.status === 'in_progress';
+  const assessment = interview?.mode === 'assessment';
+  const draftKey = useCallback((questionId) => 'mockvue_draft_' + user?._id + '_' + id + '_' + questionId, [user?._id, id]);
+  const updateAnswer = useCallback((value, isVoice = false) => {
+    const next = typeof value === 'function' ? value(answerRef.current) : value;
+    answerRef.current = next; setAnswerText(next);
+    if (isVoice) usedVoice.current = true;
+    if (!currentQuestion) return;
     try {
-      // 1. Record violation event
-      await api.post(`/interviews/${id}/monitoring`, {
-        eventType,
-        confidence: 1.0,
-        description: reasonText,
-      });
+      localStorage.setItem(draftKey(currentQuestion._id), JSON.stringify({ text: next, voice: usedVoice.current, startedAt: questionStarted.current, updatedAt: Date.now() + serverOffset.current }));
+      draftReliable.current = true; setDraftStatus('Draft saved on this device');
+    } catch { draftReliable.current = false; setDraftStatus('Draft could not be saved. Keep this page open.'); }
+  }, [currentQuestion?._id, draftKey]);
 
-      // 2. Mark interview terminated on server
-      await api.post(`/interviews/${id}/complete`, {
-        terminated: true,
-        reason: reasonText,
-      });
-    } catch (err) {
-      console.error('Termination network call failed:', err);
-    } finally {
-      // Redirect to report dossier after brief audit display
-      setTimeout(() => {
-        navigate(`/interviews/${id}/results`);
-      }, 3000);
-    }
+  useEffect(() => {
+    mounted.current = true;
+    const controller = new AbortController();
+    api.get('/interviews/' + id, { signal: controller.signal }).then((res) => {
+      if (!mounted.current) return;
+      if (['completed', 'terminated'].includes(res.interview.status)) {
+        navigate('/interviews/' + id + '/results', { replace: true }); return;
+      }
+      setInterview(res.interview); setCurrentIndex(res.interview.currentQuestionIndex || 0);
+      serverOffset.current = Date.parse(res.serverTime) - Date.now();
+      if (res.interview.endsAt) setDeadline(Date.parse(res.interview.endsAt));
+      setLoading(false);
+    }).catch((err) => { if (mounted.current && err.code !== 'ERR_CANCELED') { setError(err.message); setLoading(false); } });
+    return () => { mounted.current = false; controller.abort(); };
   }, [id, navigate]);
-
-  // 2. PROCTORING WARNING TRIGGER (5 Warnings -> Automatic Termination)
-  const triggerWarning = useCallback(async (message, eventType) => {
-    if (isTerminatedRef.current) return;
-
-    // Rate-limit warnings to avoid spamming within 2.5 seconds
-    const now = Date.now();
-    if (now - lastWarningTimeRef.current < 2500) {
-      return;
-    }
-    lastWarningTimeRef.current = now;
-
-    const newCount = warningsRef.current.length + 1;
-    const newWarning = {
-      id: `warn_${now}`,
-      message,
-      eventType,
-      count: newCount,
-      time: new Date().toLocaleTimeString(),
-    };
-
-    warningsRef.current = [...warningsRef.current, newWarning];
-    setWarnings(warningsRef.current);
-    setActiveWarningBanner(newWarning);
-
-    // Play subtle audio alert beep
+  useLayoutEffect(() => {
+    if (!currentQuestion?._id) return;
+    usedVoice.current = false; setEvaluation(null); setDraftStatus(''); questionStarted.current = Date.now();
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        const ctx = new AudioCtx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(420, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(740, ctx.currentTime + 0.18);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.18);
-      }
-    } catch (e) {}
-
-    // Auto-dismiss banner after 5.5s
-    setTimeout(() => {
-      setActiveWarningBanner((curr) => (curr?.id === newWarning.id ? null : curr));
-    }, 5500);
-
-    // Send to backend telemetry
-    try {
-      await api.post(`/interviews/${id}/monitoring`, {
-        eventType,
-        description: `Proctoring Warning (${newCount}/5): ${message}`,
-        confidence: 0.95,
-      });
-    } catch (err) {
-      console.warn('Proctoring telemetry log failed:', err);
-    }
-
-    // CRITICAL REQUIREMENT: "after 5 warning test ends"
-    if (newCount >= 5) {
-      handleTermination(
-        'Exam terminated: Exceeded maximum allowed proctoring warnings (5/5 infractions accumulated).',
-        'max_warnings_exceeded'
-      );
-    }
-  }, [id, handleTermination]);
-
-  // 3. CONTINUOUS COMPUTER VISION & AUDIO TELEMETRY HANDLER
-  const handleCVTelemetry = useCallback((telemetry) => {
-    if (!hasEnteredExamMode || isTerminatedRef.current) return;
-
-    setLiveCV(telemetry);
-
-    // A. Person out of frame check: "if the person goes out of the frame for more than 10 sec warning comes"
-    if (!telemetry.faceDetected) {
-      outOfFrameTimerRef.current += 0.15; // frame interval step
-      const currentSeconds = Math.round(outOfFrameTimerRef.current);
-      setOutOfFrameSeconds(currentSeconds);
-
-      if (outOfFrameTimerRef.current >= 10.0) {
-        triggerWarning(
-          'Candidate absent: No face detected in camera frame for over 10 consecutive seconds.',
-          'person_out_of_frame'
-        );
-        outOfFrameTimerRef.current = 0; // reset for next 10s cycle
-        setOutOfFrameSeconds(0);
-      }
-    } else {
-      outOfFrameTimerRef.current = 0;
-      setOutOfFrameSeconds(0);
-    }
-
-    // B. Eye gaze / off-screen check: "if eyes are not in nearby cordinates or they are off screen"
-    if (telemetry.faceDetected && !telemetry.gaze.centered) {
-      gazeDeviationTimerRef.current += 0.15;
-      const currentGazeSec = Math.round(gazeDeviationTimerRef.current);
-      setGazeDeviationSeconds(currentGazeSec);
-
-      if (gazeDeviationTimerRef.current >= 4.0) {
-        triggerWarning(
-          `Gaze deviation: Candidate eyes directed away from screen center (${telemetry.gaze.label}). Please look directly at the evaluation prompt.`,
-          'eye_gaze_deviated'
-        );
-        gazeDeviationTimerRef.current = 0;
-        setGazeDeviationSeconds(0);
-      }
-    } else {
-      gazeDeviationTimerRef.current = 0;
-      setGazeDeviationSeconds(0);
-    }
-
-    // C. Multiple faces check
-    if (telemetry.faceCount > 1) {
-      multipleFacesTimerRef.current += 0.15;
-      if (multipleFacesTimerRef.current >= 2.0) {
-        triggerWarning(
-          `Security violation: Multiple individuals (${telemetry.faceCount} faces) detected in video frame. Only the candidate is permitted.`,
-          'multiple_faces_detected'
-        );
-        multipleFacesTimerRef.current = 0;
-      }
-    } else {
-      multipleFacesTimerRef.current = 0;
-    }
-
-    // D. Audio anomaly detection (sustained background talk when candidate is reading)
-    if (telemetry.audioDb > 62 && !isRecordingRef.current) {
-      audioAnomalyTimerRef.current += 0.15;
-      if (audioAnomalyTimerRef.current >= 5.0) {
-        triggerWarning(
-          'Acoustic anomaly: Sustained secondary voices or elevated background speech detected in environment.',
-          'audio_anomaly_detected'
-        );
-        audioAnomalyTimerRef.current = 0;
-      }
-    } else {
-      audioAnomalyTimerRef.current = 0;
-    }
-  }, [hasEnteredExamMode, triggerWarning]);
-
-  // 4. CAMERA & COMPUTER VISION INITIALIZATION
-  const initAllTimeCamera = useCallback(async () => {
-    try {
-      setCameraError('');
-      if (camStreamRef.current) {
-        camStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        audio: true,
-      });
-
-      camStreamRef.current = stream;
-      setCamStream(stream);
-
-      if (camVideoRef.current) {
-        camVideoRef.current.srcObject = stream;
-        camVideoRef.current.play().catch(() => {});
-      }
-
-      // Initialize CV & Audio Engine
-      if (camVideoRef.current && overlayCanvasRef.current) {
-        if (cvEngineRef.current) {
-          cvEngineRef.current.stop();
-        }
-        const engine = new ProctoringCVEngine(camVideoRef.current, overlayCanvasRef.current);
-        engine.initAudio(stream);
-        engine.start(handleCVTelemetry);
-        cvEngineRef.current = engine;
-      }
-
-      // Track unexpected camera disconnection
-      stream.getVideoTracks().forEach((track) => {
-        track.onended = () => {
-          setCameraError('Camera stream disconnected unexpectedly.');
-          triggerWarning('Webcam stream was disconnected.', 'camera_disconnected');
-        };
-      });
-    } catch (err) {
-      console.warn('All-time camera access error:', err.message);
-      setCameraError('Camera access is required for proctoring. Please grant camera permission in browser.');
-      api.post(`/interviews/${id}/monitoring`, {
-        eventType: 'camera_disconnected',
-        description: `Camera permission denied: ${err.message}`,
-      }).catch(() => {});
-    }
-  }, [id, handleCVTelemetry, triggerWarning]);
-
-  // Connect video stream to video & canvas whenever camStream is established
+      const local = JSON.parse(localStorage.getItem(draftKey(currentQuestion._id)) || 'null');
+      const remote = interview?.draft;
+      const draft = remote?.questionId === currentQuestion._id && Date.parse(remote.savedAt) > (local?.updatedAt || 0)
+        ? { text: remote.responseText, voice: remote.responseType === 'voice' } : local;
+      const text = typeof draft?.text === 'string' ? draft.text : '';
+      answerRef.current = text; setAnswerText(text); usedVoice.current = Boolean(draft?.voice);
+      if (Number.isFinite(draft?.startedAt)) questionStarted.current = draft.startedAt;
+      if (text) setDraftStatus('Saved draft restored');
+    } catch { answerRef.current = ''; setAnswerText(''); }
+  }, [currentQuestion?._id, draftKey]);
   useEffect(() => {
-    if (camVideoRef.current && camStream) {
-      camVideoRef.current.srcObject = camStream;
-      camVideoRef.current.play().catch(() => {});
-
-      if (overlayCanvasRef.current && !cvEngineRef.current) {
-        const engine = new ProctoringCVEngine(camVideoRef.current, overlayCanvasRef.current);
-        engine.initAudio(camStream);
-        engine.start(handleCVTelemetry);
-        cvEngineRef.current = engine;
-      }
-    }
-  }, [camStream, handleCVTelemetry]);
-
-  // 5. TAB SWITCH, FOCUS LOST, FULLSCREEN & KEYBOARD TRAPPING
-  useEffect(() => {
-    if (!hasEnteredExamMode || isTerminated) return;
-
-    // RULE 1: "if someone goes from that tab test end" -> Visibility hidden (switched tabs / minimized)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && hasEnteredExamMode && !isTerminatedRef.current) {
-        handleTermination(
-          'Exam terminated: Candidate navigated away from the examination tab.',
-          'tab_switched'
-        );
-      }
-    };
-
-    // RULE 2: Window blur (switched application, clicked outside browser window, opened DevTools)
-    const handleWindowBlur = () => {
-      if (hasEnteredExamMode && !isTerminatedRef.current) {
-        handleTermination(
-          'Exam terminated: Window lost focus (candidate navigated away from examination).',
-          'window_blurred'
-        );
-      }
-    };
-
-    // RULE 3: Fullscreen exit termination
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement ||
-        document.mozFullScreenElement ||
-        document.msFullscreenElement
-      );
-
-      setIsFullscreen(isCurrentlyFullscreen);
-
-      if (hasEnteredExamMode && !isCurrentlyFullscreen && !isTerminatedRef.current) {
-        handleTermination(
-          'Exam terminated: Full-screen examination mode was exited.',
-          'fullscreen_exit'
-        );
-      }
-    };
-
-    // RULE 4: Keyboard Restricted Shortcut Trapping
-    const handleKeyDown = (e) => {
-      // Escape key
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        triggerWarning('Escape key intercepted. Exiting full-screen is prohibited.', 'keyboard_shortcut_violation');
-        return;
-      }
-
-      // Alt key shortcuts (Alt+Tab, Alt+F4, Alt+Left)
-      if (e.altKey && e.key !== 'Alt') {
-        e.preventDefault();
-        triggerWarning('Alt navigation shortcuts are restricted during examination.', 'keyboard_shortcut_violation');
-        return;
-      }
-
-      // Developer Tools: F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
-      if (
-        e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && ['I', 'i', 'J', 'j', 'C', 'c'].includes(e.key))
-      ) {
-        e.preventDefault();
-        triggerWarning('Developer inspection tools and shortcuts are strictly prohibited.', 'keyboard_shortcut_violation');
-        return;
-      }
-
-      // Clipboard shortcuts: Ctrl+C, Ctrl+V, Ctrl+X
-      if (e.ctrlKey && ['c', 'C', 'v', 'V', 'x', 'X'].includes(e.key)) {
-        e.preventDefault();
-        triggerWarning(
-          `Clipboard shortcut [Ctrl+${e.key.toUpperCase()}] intercepted. Copy-pasting is prohibited.`,
-          'keyboard_shortcut_violation'
-        );
-        return;
-      }
-
-      // Browser Tab manipulation: Ctrl+T, Ctrl+W, Ctrl+N
-      if (e.ctrlKey && ['t', 'T', 'w', 'W', 'n', 'N'].includes(e.key)) {
-        e.preventDefault();
-        triggerWarning(
-          `Browser navigation shortcut [Ctrl+${e.key.toUpperCase()}] intercepted.`,
-          'keyboard_shortcut_violation'
-        );
-        return;
-      }
-    };
-
-    // Right-click context menu trap
-    const handleContextMenu = (e) => {
-      e.preventDefault();
-      triggerWarning('Right-click context menu is restricted in secure exam mode.', 'keyboard_shortcut_violation');
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleWindowBlur);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('msfullscreenchange', handleFullscreenChange);
-    window.addEventListener('keydown', handleKeyDown, true);
-    window.addEventListener('contextmenu', handleContextMenu);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleWindowBlur);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
-      window.removeEventListener('keydown', handleKeyDown, true);
-      window.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [hasEnteredExamMode, isTerminated, handleTermination, triggerWarning]);
-
-  // Enter Full Screen Mode & Start Camera
-  const enterExamMode = async () => {
-    try {
-      const elem = document.documentElement;
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen();
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen();
-      }
-      setIsFullscreen(true);
-      setHasEnteredExamMode(true);
-      await initAllTimeCamera();
-    } catch (err) {
-      console.error('Fullscreen request failed:', err);
-      // Still allow candidate into session if fullscreen blocked by permission
-      setHasEnteredExamMode(true);
-      await initAllTimeCamera();
-    }
-  };
-
-  // Load Interview Data & Initialize Question
-  useEffect(() => {
-    let timerInterval = null;
-
-    api.get(`/interviews/${id}`)
-      .then((res) => {
-        setInterview(res.interview);
-
-        // Check if already completed or terminated
-        if (res.interview.status === 'completed' || res.interview.status === 'terminated') {
-          navigate(`/interviews/${id}/results`, { replace: true });
-          return;
-        }
-
-        const questions = res.interview.questions || [];
-        const savedIdx = parseInt(localStorage.getItem(`mockvue_int_${id}_idx`) || '0', 10);
-        const validIdx = Math.min(Math.max(0, savedIdx), Math.max(0, questions.length - 1));
-        setCurrentIndex(validIdx);
-
-        // Calculate and restore countdown timer
-        const durationSec = (res.interview.durationMinutes || 20) * 60;
-        const storageKey = `mockvue_timer_end_${id}`;
-        let endTime = localStorage.getItem(storageKey);
-
-        if (!endTime) {
-          endTime = Date.now() + durationSec * 1000;
-          localStorage.setItem(storageKey, String(endTime));
-        } else {
-          endTime = parseInt(endTime, 10);
-        }
-        endTimeRef.current = endTime;
-
-        const updateTimer = () => {
-          const now = Date.now();
-          const diff = Math.max(0, Math.round((endTimeRef.current - now) / 1000));
-          setSecondsRemaining(diff);
-
-          if (diff <= 0) {
-            clearInterval(timerInterval);
-            handleAutoSubmitDueToTime();
-          }
-        };
-
-        updateTimer();
-        timerInterval = setInterval(updateTimer, 1000);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load interview session.');
-        setLoading(false);
+    if (!started || !currentQuestion || evaluation || isSubmitting || isFinishing) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const text = answerRef.current;
+      api.put('/interviews/' + id + '/draft', {
+        questionId: currentQuestion._id, responseText: text, responseType: usedVoice.current ? 'voice' : 'text',
+        timeSpentSeconds: Math.max(0, Math.round((Date.now() - questionStarted.current) / 1000)),
+      }, { signal: controller.signal, timeout: 10000 }).then(() => {
+        if (!controller.signal.aborted && mounted.current && answerRef.current === text) setDraftStatus('Draft synced');
+      }).catch((err) => {
+        if (!controller.signal.aborted && mounted.current && err.code !== 'ERR_CANCELED') setDraftStatus('Saved on this device. Server sync unavailable.');
       });
-
-    return () => {
-      if (timerInterval) clearInterval(timerInterval);
-    };
-  }, [id, navigate]);
-
-  // Teardown camera & CV engine on unmount
+    }, 700);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [answerText, currentQuestion?._id, id, started, evaluation, isSubmitting, isFinishing]);
   useEffect(() => {
-    return () => {
-      if (cvEngineRef.current) {
-        cvEngineRef.current.stop();
-      }
-      if (camStreamRef.current) {
-        camStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
-      }
+    if (!deadline || sessionComplete) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now() - serverOffset.current) / 1000));
+      setSecondsLeft(remaining);
+      if (!remaining && !autoAttempted.current && !submitting.current && !finishing.current && !voiceActive.current) { autoAttempted.current = true; finishRef.current?.({ automatic: true }); }
     };
+    tick(); const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [deadline, sessionComplete]);
+  useEffect(() => {
+    const beforeUnload = (event) => {
+      if ((answerRef.current.trim() && !draftReliable.current) || voiceActive.current || submitting.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
   }, []);
-
-  // Web Speech API Voice Dictation
-  const toggleRecording = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech Recognition is not supported in this browser. Please type your response.');
-      return;
-    }
-
-    if (isRecording) {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+  useEffect(() => {
+    if (!assessment || !started || sessionComplete) return;
+    const change = () => {
+      const active = Boolean(document.fullscreenElement);
+      setFullscreen(active);
+      // Permission dialogs may temporarily leave full screen. Never discard a voice answer.
+      if (!active && !finishing.current && !voicePrompt.current) {
+        finishRef.current?.({ terminated: true, reason: 'Interview ended because full-screen mode was exited.' });
       }
-      setIsRecording(false);
-      isRecordingRef.current = false;
-    } else {
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden' && !finishing.current && !voicePrompt.current) {
+        finishRef.current?.({ terminated: true, reason: 'Interview ended because you left the interview tab.' });
+      }
+    };
+    document.addEventListener('fullscreenchange', change);
+    document.addEventListener('visibilitychange', visibility);
+    return () => { document.removeEventListener('fullscreenchange', change); document.removeEventListener('visibilitychange', visibility); };
+  }, [assessment, started, sessionComplete]);
+  useEffect(() => () => {
+    camera.current?.getTracks().forEach((track) => track.stop());
+    window.speechSynthesis?.cancel();
+  }, []);
+  useEffect(() => {
+    if (!feedbackPending(evaluation)) return;
+    const controller = new AbortController();
+    let timer, delay = 2000;
+    const poll = async () => {
       try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        const result = await api.get('/interviews/' + id, { signal: controller.signal });
+        const updated = result.interview.answers.find((a) => a._id === evaluation._id);
+        if (!controller.signal.aborted && updated) setEvaluation(updated);
+      } catch { /* Saved answers remain available on the results page. */ }
+      if (!controller.signal.aborted) { delay = Math.min(delay * 2, 10000); timer = setTimeout(poll, delay); }
+    };
+    timer = setTimeout(poll, delay);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [id, evaluation?._id, evaluation?.evaluationStatus]);
+  useEffect(() => { if (video.current && camera.current) video.current.srcObject = camera.current; }, [cameraOn]);
 
-        recognition.onresult = (event) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript;
-          }
-          setAnswerText((prev) => (prev ? `${prev} ${currentTranscript}` : currentTranscript));
-        };
-
-        recognition.onerror = (event) => {
-          console.warn('Speech recognition notice:', event.error);
-          setIsRecording(false);
-          isRecordingRef.current = false;
-        };
-
-        recognition.onend = () => {
-          setIsRecording(false);
-          isRecordingRef.current = false;
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        setIsRecording(true);
-        isRecordingRef.current = true;
-      } catch (e) {
-        console.error('Speech initialization error:', e);
-        setIsRecording(false);
-        isRecordingRef.current = false;
+  const start = async () => {
+    if (isStarting) return;
+    setIsStarting(true); setError('');
+    try {
+      if (assessment && !document.fullscreenElement) {
+        if (!document.documentElement.requestFullscreen) throw new Error('Assessment mode needs full-screen support. Use a supported browser or create a practice interview.');
+        await document.documentElement.requestFullscreen(); setFullscreen(true);
       }
-    }
+      const result = await api.post('/interviews/' + id + '/start');
+      serverOffset.current = Date.parse(result.serverTime) - Date.now();
+      setDeadline(Date.parse(result.endsAt));
+      setInterview((value) => ({ ...value, status: 'in_progress', startedAt: result.startedAt }));
+      questionStarted.current = Date.now();
+    } catch (err) { setError(err.message || 'Could not start. Please try again.'); }
+    finally { setIsStarting(false); }
   };
-
-  const handleAutoSubmitDueToTime = () => {
-    handleEndInterviewEarly();
-  };
-
-  const handleEndInterviewEarly = async () => {
-    localStorage.removeItem(`mockvue_int_${id}_idx`);
-    localStorage.removeItem(`mockvue_timer_end_${id}`);
+  const submit = async (skipped = false) => {
+    if (submitting.current || evaluation || (!skipped && !answerRef.current.trim())) return null;
+    submitting.current = true; setIsSubmitting(true); setError(''); window.speechSynthesis?.cancel();
     try {
-      await api.post(`/interviews/${id}/complete`);
-      navigate(`/interviews/${id}/results`);
-    } catch (err) {
-      navigate(`/interviews/${id}/results`);
-    }
+      const result = await api.post('/interviews/' + id + '/answer', {
+        questionId: currentQuestion._id, responseText: answerRef.current, responseType: usedVoice.current ? 'voice' : 'text', skipped,
+        timeSpentSeconds: Math.max(0, Math.round((Date.now() - questionStarted.current) / 1000)),
+      }, { timeout: 135000 });
+      setEvaluation(result.evaluation); setSessionComplete(result.isComplete);
+      try { localStorage.removeItem(draftKey(currentQuestion._id)); } catch {}
+      setDraftStatus('Answer saved');
+      return result;
+    } catch (err) { setError(err.message || 'Could not save your answer. Your draft is still here.'); throw err; }
+    finally { submitting.current = false; setIsSubmitting(false); }
   };
-
-  const questions = interview?.questions || [];
-  const currentQuestion = questions[currentIndex];
-
-  const handleSubmitAnswer = async () => {
-    if (!answerText.trim() || isSubmitting) return;
-
-    if (isRecording && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-      isRecordingRef.current = false;
-    }
-
-    setIsSubmitting(true);
-    setSubmissionStep('Transmitting candidate telemetry to rubric matrix...');
-
-    const timeSpent = Math.max(5, Math.round((Date.now() - questionStartTime) / 1000));
-
+  const finish = async ({ automatic = false, terminated = false, reason = null } = {}) => {
+    if (finishing.current || submitting.current) return;
+    finishing.current = true; setIsFinishing(true); setFinishOpen(false); setError('');
     try {
-      const res = await api.post(`/interviews/${id}/answer`, {
-        questionId: currentQuestion._id,
-        responseText: answerText,
-        timeSpentSeconds: timeSpent,
-        responseType: isRecording ? 'audio_transcript' : 'text',
-      });
-
-      setSubmissionStep('Computing rubric criteria feedback...');
-      setCurrentEvaluation(res.evaluation);
+      if (!terminated && answerRef.current.trim() && !evaluation && !voiceActive.current && (!deadline || Date.now() + serverOffset.current < deadline + (assessment ? 2000 : 120000))) {
+        try { await submit(); } catch (err) { if (!automatic) throw err; }
+      }
+      await api.post('/interviews/' + id + '/complete', { terminated, reason }, { timeout: 135000 });
+      setSessionComplete(true); window.speechSynthesis?.cancel();
+      if (assessment && document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      navigate('/interviews/' + id + '/results', { replace: true });
     } catch (err) {
-      setError(err.message || 'Failed to submit response. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-      setSubmissionStep('');
+      setError(err.message || 'Could not finish the interview. Your draft is saved. Please retry.');
+      finishing.current = false; setIsFinishing(false);
     }
   };
-
-  const handleNextQuestion = () => {
-    const nextIdx = currentIndex + 1;
-    if (nextIdx >= questions.length) {
-      localStorage.removeItem(`mockvue_int_${id}_idx`);
-      localStorage.removeItem(`mockvue_timer_end_${id}`);
-      navigate(`/interviews/${id}/results`);
-    } else {
-      setCurrentIndex(nextIdx);
-      localStorage.setItem(`mockvue_int_${id}_idx`, String(nextIdx));
-      setAnswerText('');
-      setCurrentEvaluation(null);
-      setQuestionStartTime(Date.now());
-    }
+  finishRef.current = finish;
+  const next = () => {
+    if (sessionComplete) { finishing.current = true; navigate('/interviews/' + id + '/results'); return; }
+    setEvaluation(null); setCurrentIndex((index) => index + 1);
+  };
+  const toggleCamera = async () => {
+    if (cameraOn) { camera.current?.getTracks().forEach((track) => track.stop()); camera.current = null; setCameraOn(false); return; }
+    setCameraError(''); voicePrompt.current = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      if (!mounted.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      camera.current = stream; setCameraOn(true);
+    } catch { setCameraError('Camera unavailable. You can continue without a preview.'); } finally { voicePrompt.current = false; }
+  };
+  const readQuestion = () => {
+    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
+    const speech = new SpeechSynthesisUtterance(currentQuestion.questionText);
+    speech.lang = 'en-US'; speech.rate = 0.95;
+    speech.onend = () => setSpeaking(false); speech.onerror = () => setSpeaking(false);
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(speech); setSpeaking(true);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[75vh] flex items-center justify-center">
-        <Spinner size="lg" label="Locking Examination Cockpit & Sensors..." />
-      </div>
-    );
-  }
-
-  // 1. EARLY TERMINATION AUDIT MODAL
-  if (isTerminated) {
-    return (
-      <div className="min-h-screen bg-[#F7F4EE] dark:bg-[#141210] flex items-center justify-center p-4">
-        <div className="max-w-md w-full p-6 sm:p-8 rounded-xl border border-[#E8C4C4] dark:border-[#A33B3B]/40 bg-[#FFFDF9] dark:bg-[#1C1916] text-center shadow-paper space-y-4 animate-scale-in">
-          <div className="w-14 h-14 rounded-full bg-[#FAF0F0] dark:bg-[#A33B3B]/20 border border-[#E8C4C4] dark:border-[#A33B3B]/40 text-[#A33B3B] flex items-center justify-center mx-auto">
-            <ShieldAlert className="w-8 h-8" />
-          </div>
-          <div className="space-y-1.5">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#A33B3B] block">
-              SECURITY TERMINATION
-            </span>
-            <h2 className="text-xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-              Examination Concluded
-            </h2>
-            <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono leading-relaxed">
-              {terminationReason}
-            </p>
-          </div>
-          <div className="p-3 rounded-lg bg-[#FAF0F0] dark:bg-[#A33B3B]/10 border border-[#E8C4C4] dark:border-[#A33B3B]/20 text-[11px] font-mono text-[#A33B3B]">
-            All submitted responses have been sealed and evaluated. Redirecting to official transcript...
-          </div>
-          <Spinner size="sm" label="Generating Final Evaluation Dossier..." />
-        </div>
-      </div>
-    );
-  }
-
-  // 2. FULLSCREEN GATE: Must enter full-screen to start examination
-  if (!hasEnteredExamMode || !isFullscreen) {
-    return (
-      <div className="min-h-[85vh] flex items-center justify-center px-4 font-sans py-8">
-        <div className="max-w-xl w-full p-6 sm:p-8 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-paper space-y-6 text-center">
-          <div className="w-14 h-14 rounded-[12px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 border border-[#E8C5CC] dark:border-[#7A263A]/40 text-[#7A263A] dark:text-[#E8A5B2] flex items-center justify-center mx-auto">
-            <Lock className="w-7 h-7" />
-          </div>
-
-          <div className="space-y-2">
-            <span className="font-mono text-[10px] uppercase font-semibold tracking-wider text-[#7A263A] dark:text-[#D4AA6A]">
-              PROCTORING INTEGRITY MANDATE
-            </span>
-            <h1 className="text-2xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-              Strict Assessment Protocol
-            </h1>
-            <p className="text-xs text-[#68645E] dark:text-[#9E988F] leading-relaxed max-w-md mx-auto">
-              MockVue enforces continuous Computer Vision, Gaze Coordinate Tracking, and Full-Screen lock during examinations.
-            </p>
-          </div>
-
-          {/* Strict Rules Audit Table */}
-          <div className="text-left font-mono text-xs space-y-2.5 p-4 rounded-lg bg-[#F7F4EE] dark:bg-[#141210] border border-[#DED9D0] dark:border-[#332F2A]">
-            <div className="flex items-start gap-2 text-[#A33B3B] dark:text-[#E59797]">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span><strong>Tab Navigation Ban:</strong> Leaving or minimizing this tab immediately terminates the test.</span>
-            </div>
-            <div className="flex items-start gap-2 text-[#A33B3B] dark:text-[#E59797]">
-              <Maximize2 className="w-4 h-4 shrink-0 mt-0.5" />
-              <span><strong>Full-Screen Lock:</strong> Exiting full-screen mode immediately concludes your session.</span>
-            </div>
-            <div className="flex items-start gap-2 text-[#7A263A] dark:text-[#D4AA6A]">
-              <Eye className="w-4 h-4 shrink-0 mt-0.5" />
-              <span><strong>Face & Gaze Tracking:</strong> Absence for &gt;10s or looking off-screen issues warnings.</span>
-            </div>
-            <div className="flex items-start gap-2 text-[#68645E] dark:text-[#9E988F]">
-              <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-              <span><strong>5-Warning Hard Limit:</strong> 5 cumulative warnings will automatically terminate the exam.</span>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <Button size="lg" icon={Maximize2} onClick={enterExamMode} className="w-full font-medium">
-              Initiate Proctoring & Enter Examination
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. ACTIVE INTERVIEW ROOM COCKPIT
-  const minutes = Math.floor(secondsRemaining / 60);
-  const seconds = secondsRemaining % 60;
-  const isTimeCritical = secondsRemaining > 0 && secondsRemaining < 180;
+  if (loading) return <div className="min-h-[65vh] flex items-center justify-center"><Spinner size="lg" label="Loading your interview…" /></div>;
+  if (!interview || !currentQuestion) return <div className="max-w-xl mx-auto px-5 py-20 space-y-4"><h1 className="font-serif text-3xl font-bold">Interview unavailable</h1><p role="alert">{error || 'No questions were found for this interview.'}</p><Link to="/dashboard"><Button variant="outline">Back to dashboard</Button></Link></div>;
+  const locked = isSubmitting || isFinishing || voiceBusy;
+  const needsStart = !started || (assessment && !fullscreen && !voiceBusy);
   const wordCount = answerText.trim() ? answerText.trim().split(/\s+/).length : 0;
-  const integrityScore = Math.max(0, 100 - warnings.length * 15);
 
   return (
-    <div className="min-h-screen bg-[#F7F4EE] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] p-4 sm:p-6 space-y-4 animate-fade-in font-sans">
-      {/* Top Cockpit Telemetry Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#DED9D0] dark:border-[#332F2A]">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-[6px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] border border-[#E8C5CC] dark:border-[#7A263A]/40">
-            QUESTION {String(currentIndex + 1).padStart(2, '0')} / {String(questions.length).padStart(2, '0')}
-          </span>
-          <span className="text-sm font-serif font-bold tracking-tight text-[#171717] dark:text-[#F7F4EE]">
-            {interview?.targetRole}
-          </span>
-          <span className="hidden md:inline font-mono text-xs text-[#68645E] dark:text-[#9E988F]">
-            • {interview?.difficulty} • {currentQuestion?.topic}
-          </span>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#DED9D0] dark:border-[#332F2A] pb-6">
+        <div className="min-w-0 max-w-2xl">
+          <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-[#68645E] dark:text-[#9E988F] hover:underline mb-3"><ArrowLeft className="w-3.5 h-3.5" />Dashboard</Link>
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold leading-tight">{interview.targetRole}</h1>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <Badge variant="brand">{assessment ? 'Assessment' : 'Practice'}</Badge>{started && <span className="lg:hidden text-xs">Question {currentIndex + 1} of {questions.length}</span>}<Badge>{interview.difficulty}</Badge>
+            <span className="text-xs text-[#68645E] dark:text-[#9E988F]">{interview.isFallbackAI ? 'Question bank' : interview.questionProvider === 'local' ? 'Local AI questions' : 'AI questions'}</span>
+          </div>
         </div>
-
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-          {/* Live Security Badges */}
-          <div className="flex items-center gap-2 font-mono text-[10px] font-semibold">
-            {/* Integrity Meter */}
-            <span className="px-2 py-0.5 rounded-[6px] bg-[#FFFDF9] dark:bg-[#1C1916] text-[#171717] dark:text-[#F7F4EE] border border-[#DED9D0] dark:border-[#332F2A] flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-[#3F6B52]" />
-              INTEGRITY: {integrityScore}%
-            </span>
-
-            {/* Warning Counter */}
-            <span className={`px-2 py-0.5 rounded-[6px] border flex items-center gap-1 ${
-              warnings.length >= 3
-                ? 'bg-[#FAF0F0] text-[#A33B3B] border-[#E8C4C4] animate-pulse'
-                : warnings.length > 0
-                ? 'bg-[#FBF5EC] text-[#A66A24] border-[#E8D5BE]'
-                : 'bg-[#EFF5F1] text-[#3F6B52] border-[#C2D9CB]'
-            }`}>
-              <AlertTriangle className="w-3 h-3" />
-              WARNINGS: {warnings.length} / 5
-            </span>
-
-            {/* Fullscreen indicator */}
-            <span className="hidden sm:flex px-2 py-0.5 rounded-[6px] bg-[#EFF5F1] text-[#3F6B52] border border-[#C2D9CB] items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3F6B52] animate-pulse" />
-              TAB LOCKED
-            </span>
+        <div className="flex items-center gap-3">
+          <div role="timer" aria-label="Time remaining" className={'flex items-center gap-2 rounded-xl border px-4 py-2.5 font-mono text-lg ' + (started && secondsLeft < 120 ? 'border-[#E8C4C4] text-[#A33B3B]' : 'border-[#DED9D0] dark:border-[#332F2A]')}>
+            <Clock className="w-4 h-4" />{started ? formatTime(secondsLeft) : interview.durationMinutes + ':00'}
           </div>
-
-          {/* Countdown Timer */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-[8px] font-mono text-xs font-bold border transition-colors ${
-              isTimeCritical
-                ? 'bg-[#FAF0F0] text-[#A33B3B] border-[#E8C4C4] animate-pulse'
-                : 'bg-[#FFFDF9] dark:bg-[#1C1916] text-[#171717] dark:text-[#F7F4EE] border-[#DED9D0] dark:border-[#332F2A]'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5 text-[#7A263A] dark:text-[#D4AA6A]" />
-            <span>
-              {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
-            </span>
-          </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleEndInterviewEarly}
-            className="text-[#68645E] dark:text-[#9E988F] hover:text-[#A33B3B] text-xs font-mono"
-          >
-            Finish Exam
-          </Button>
+          {started && <button type="button" className="lg:hidden p-2 rounded-lg border border-[#DED9D0] dark:border-[#332F2A]" aria-label={cameraOn ? 'Turn off camera preview' : 'Turn on camera preview'} onClick={toggleCamera}>{cameraOn ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}</button>}
+          {started && <Button variant="outline" onClick={() => setFinishOpen(true)} disabled={locked} isLoading={isFinishing}>Finish</Button>}
         </div>
       </div>
-
-      {/* ACTIVE WARNING NOTIFICATION BANNER */}
-      {activeWarningBanner && (
-        <div className="p-3.5 rounded-xl bg-[#FAF0F0] dark:bg-[#A33B3B]/20 border border-[#E8C4C4] dark:border-[#A33B3B]/40 flex items-center justify-between gap-3 text-xs text-[#A33B3B] dark:text-[#E59797] font-mono animate-bounce-subtle">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-5 h-5 shrink-0" />
-            <div>
-              <strong>PROCTORING WARNING ({activeWarningBanner.count} OF 5 ALLOWED):</strong>{' '}
-              <span>{activeWarningBanner.message}</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-[#A33B3B] text-white text-[10px] font-bold shrink-0">
-            {5 - activeWarningBanner.count} REMAINING
-          </span>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-3 rounded-[8px] bg-[#FAF0F0] dark:bg-[#A33B3B]/15 border border-[#E8C4C4] dark:border-[#A33B3B]/40 flex items-center gap-2 text-xs text-[#A33B3B] dark:text-[#E59797] font-mono">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Main Stage Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column (5 cols): Question Prompt & Real-time Computer Vision HUD */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card className="p-5 shadow-paper">
-            <div className="flex items-center justify-between pb-2 mb-3 border-b border-[#DED9D0]/70 dark:border-[#332F2A]/70">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-                EVALUATION PROMPT
-              </span>
-              <span className="font-mono text-[10px] text-[#7A263A] dark:text-[#D4AA6A] font-semibold">
-                {currentQuestion?.topic?.toUpperCase()}
-              </span>
-            </div>
-
-            <h2 className="text-base sm:text-lg font-serif font-bold text-[#171717] dark:text-[#F7F4EE] leading-snug">
-              {currentQuestion?.questionText}
-            </h2>
-
-            <div className="mt-4 pt-3 border-t border-[#DED9D0]/60 dark:border-[#332F2A]/60 flex items-start gap-2 text-xs text-[#68645E] dark:text-[#9E988F] font-mono">
-              <HelpCircle className="w-4 h-4 text-[#7A263A] dark:text-[#D4AA6A] shrink-0 mt-0.5" />
-              <p className="text-[11px] leading-relaxed">
-                Be structured. Explain internal mechanisms, time/space complexity, and practical edge cases.
-              </p>
-            </div>
-          </Card>
-
-          {/* Continuous Computer Vision Proctoring Cockpit */}
-          <Card className="p-4 shadow-paper space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE] flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#3F6B52]" />
-                Computer Vision & Audio Proctor
-              </span>
-              <span className="font-mono text-[10px] text-[#3F6B52] dark:text-[#88BA9D] flex items-center gap-1 font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#3F6B52] animate-pulse" />
-                OPENCV / RAM ACTIVE
-              </span>
-            </div>
-
-            {/* Video Preview with Overlay Canvas for AR Telemetry */}
-            <div className="relative aspect-video rounded-xl bg-[#1C1916] overflow-hidden flex items-center justify-center border border-[#DED9D0] dark:border-[#332F2A]">
-              <video
-                ref={camVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-              <canvas
-                ref={overlayCanvasRef}
-                width={320}
-                height={240}
-                className="absolute inset-0 w-full h-full pointer-events-none"
-              />
-
-              {/* Real-time Out-of-frame Countdown Alert */}
-              {outOfFrameSeconds > 0 && (
-                <div className="absolute top-10 left-3 right-3 p-2 rounded-lg bg-[#FAF0F0]/90 text-[#A33B3B] font-mono text-xs font-bold border border-[#A33B3B] text-center animate-pulse">
-                  ⚠️ NO CANDIDATE DETECTED: {outOfFrameSeconds}s / 10s (WARNING AT 10s)
-                </div>
-              )}
-
-              {/* Gaze deviation warning display */}
-              {gazeDeviationSeconds > 1 && (
-                <div className="absolute bottom-10 left-3 right-3 p-1.5 rounded-lg bg-[#FBF5EC]/90 text-[#A66A24] font-mono text-[11px] font-bold border border-[#A66A24] text-center">
-                  ⚠️ EYES DIVERTED ({liveCV.gaze.label}): {gazeDeviationSeconds}s / 4s
-                </div>
-              )}
-
-              {cameraError && (
-                <div className="absolute inset-0 bg-[#1C1916]/85 p-4 flex flex-col items-center justify-center text-center space-y-2">
-                  <AlertCircle className="w-6 h-6 text-[#A33B3B]" />
-                  <p className="text-[11px] text-[#A33B3B] font-mono">{cameraError}</p>
-                  <Button size="sm" variant="secondary" onClick={initAllTimeCamera}>
-                    Retry Camera Stream
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Real-Time Live Telemetry Metrics Row */}
-            <div className="grid grid-cols-3 gap-2 font-mono text-[10px] text-center">
-              <div className="p-2 rounded-lg bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <span className="text-[#68645E] dark:text-[#9E988F] block">VISION PRESENCE</span>
-                <strong className={liveCV.faceDetected ? 'text-[#3F6B52]' : 'text-[#A33B3B]'}>
-                  {liveCV.faceDetected ? 'LOCKED (1)' : 'ABSENT'}
-                </strong>
-              </div>
-
-              <div className="p-2 rounded-lg bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <span className="text-[#68645E] dark:text-[#9E988F] block">PUPIL GAZE</span>
-                <strong className={liveCV.gaze.centered ? 'text-[#C59A5B]' : 'text-[#A66A24]'}>
-                  {liveCV.gaze.label}
-                </strong>
-              </div>
-
-              <div className="p-2 rounded-lg bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A]">
-                <span className="text-[#68645E] dark:text-[#9E988F] block">ACOUSTIC VU</span>
-                <strong className={liveCV.isSpeaking ? 'text-[#3F6B52]' : 'text-[#68645E]'}>
-                  {liveCV.audioDb} dB
-                </strong>
-              </div>
-            </div>
-
-            {/* Warning Pips Bar */}
-            <div className="p-2.5 rounded-lg bg-[#F7F4EE] dark:bg-[#141210] border border-[#DED9D0] dark:border-[#332F2A] flex items-center justify-between text-xs font-mono">
-              <span className="text-[#68645E] dark:text-[#9E988F] text-[11px]">
-                WARNING QUOTA:
-              </span>
-              <div className="flex items-center gap-1.5">
-                {[1, 2, 3, 4, 5].map((pip) => (
-                  <span
-                    key={pip}
-                    className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                      warnings.length >= pip
-                        ? 'bg-[#A33B3B] text-white'
-                        : 'bg-[#DED9D0] dark:bg-[#332F2A] text-transparent'
-                    }`}
-                  >
-                    {warnings.length >= pip ? '!' : ''}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Right Column (7 cols): Workspace & Evaluation Feedback */}
-        <div className="lg:col-span-7 space-y-4">
-          {!currentEvaluation ? (
-            /* Answer Input State */
-            <Card className="p-5 space-y-3.5 shadow-paper">
-              <div className="flex items-center justify-between pb-3 border-b border-[#DED9D0]/70 dark:border-[#332F2A]/70">
-                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE] flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-[#7A263A] dark:text-[#D4AA6A]" />
-                  Candidate Response Workspace
-                </span>
-
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-[#68645E] dark:text-[#9E988F]">{wordCount} words</span>
-                  <button
-                    onClick={toggleRecording}
-                    className={`px-2.5 py-1 rounded-[6px] text-xs font-mono font-medium flex items-center gap-1.5 transition-colors border ${
-                      isRecording
-                        ? 'bg-[#FAF0F0] text-[#A33B3B] border-[#E8C4C4] animate-pulse'
-                        : 'bg-[#F0ECE4] text-[#171717] dark:bg-[#24201C] dark:text-[#F7F4EE] border-[#DED9D0] dark:border-[#332F2A] hover:bg-[#E8E2D8]'
-                    }`}
-                  >
-                    {isRecording ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-                    <span>{isRecording ? 'Stop Dictation' : 'Dictate'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Textarea with Restricted Key Trapping */}
-              <textarea
-                rows={11}
-                value={answerText}
-                onChange={(e) => setAnswerText(e.target.value)}
-                placeholder="Type your technical defense or dictate your answer..."
-                disabled={isSubmitting}
-                className="w-full p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#141210] text-[#171717] dark:text-[#F7F4EE] text-sm font-sans focus:outline-none focus:border-[#7A263A] focus:ring-1 focus:ring-[#7A263A]/20 transition-all leading-relaxed"
-              />
-
-              {/* Rubric Criteria Chips */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#DED9D0]/60 dark:border-[#332F2A]/60 font-mono text-[11px]">
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#EFF5F1] text-[#3F6B52] dark:bg-[#3F6B52]/20 dark:text-[#88BA9D] border border-[#C2D9CB] dark:border-[#3F6B52]/40">
-                    Technical 40%
-                  </span>
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#FAF0F2] text-[#7A263A] dark:bg-[#7A263A]/20 dark:text-[#E8A5B2] border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                    Relevance 20%
-                  </span>
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#FBF5EC] text-[#A66A24] dark:bg-[#A66A24]/20 dark:text-[#DEAC74] border border-[#E8D5BE] dark:border-[#A66A24]/40">
-                    Completeness 20%
-                  </span>
-                  <span className="px-2 py-0.5 rounded-[6px] bg-[#F0ECE4] text-[#68645E] dark:bg-[#24201C] dark:text-[#9E988F] border border-[#DED9D0] dark:border-[#332F2A]">
-                    Clarity 20%
-                  </span>
-                </div>
-
-                <Button
-                  size="md"
-                  icon={Send}
-                  onClick={handleSubmitAnswer}
-                  isLoading={isSubmitting}
-                  disabled={!answerText.trim() || isSubmitting}
-                >
-                  Submit & Evaluate
-                </Button>
-              </div>
-
-              {isSubmitting && submissionStep && (
-                <div className="p-2.5 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] text-xs font-mono text-[#68645E] dark:text-[#9E988F] flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#7A263A] animate-pulse" />
-                  <span>{submissionStep}</span>
-                </div>
-              )}
+      {error && <div role="alert" className="mv-alert"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span></div>}
+      {needsStart ? (
+        <Card className="max-w-2xl mx-auto !p-8 sm:!p-10 text-center space-y-5 my-12">
+          <span className="inline-flex rounded-full bg-[#F0ECE4] dark:bg-[#24201C] p-4"><MicIcon /></span>
+          <h2 className="font-serif text-3xl font-bold">{started ? 'Return to your interview' : 'Ready when you are'}</h2>
+          <p className="text-sm leading-relaxed text-[#68645E] dark:text-[#9E988F]">{questions.length} questions · {interview.durationMinutes} minutes. Type your answers or record them. You can review each transcript before submitting.</p>
+          <p className="text-xs text-[#68645E] dark:text-[#9E988F]">{assessment ? 'Stay in this tab in full-screen mode. Leaving ends this assessment.' : 'Camera and full screen are optional. Your drafts save on this device.'}</p>
+          <Button size="lg" icon={assessment ? Maximize2 : ArrowRight} onClick={start} isLoading={isStarting}>{started ? 'Resume interview' : 'Start interview'}</Button>
+          <p className="text-xs text-[#68645E] dark:text-[#9E988F]">{started ? 'Your original time limit still applies.' : 'The timer starts only when you begin.'}</p>
+        </Card>
+      ) : (
+        <div className="grid lg:grid-cols-[240px_minmax(0,1fr)] gap-6 items-start">
+          <aside className="hidden lg:block space-y-4">
+            <Card className="!p-4">
+              <div className="flex items-center justify-between text-xs mb-4"><span className="font-semibold">Questions</span><span className="text-[#68645E] dark:text-[#9E988F]">{currentIndex + 1} of {questions.length}</span></div>
+              <ol className="flex lg:flex-col gap-2 flex-wrap">
+                {questions.map((question, index) => <li key={question._id} aria-current={index === currentIndex ? 'step' : undefined} className={'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs ' + (index === currentIndex ? 'bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] font-semibold' : 'text-[#68645E] dark:text-[#9E988F]')}>
+                  <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center shrink-0">{index < currentIndex || (index === currentIndex && evaluation) ? <Check className="w-3 h-3" /> : index + 1}</span><span className="hidden lg:inline">{question.topic}</span>
+                </li>)}
+              </ol>
             </Card>
-          ) : (
-            /* Live Evaluation Feedback Display */
-            <div className="space-y-4">
-              <Card className="p-5 space-y-4 shadow-paper border-[#DED9D0]">
-                <div className="flex items-center justify-between pb-3 border-b border-[#DED9D0] dark:border-[#332F2A]">
-                  <div className="space-y-0.5">
-                    <span className="font-mono text-[10px] uppercase font-semibold text-[#68645E] dark:text-[#9E988F]">
-                      CALIBRATED EVALUATION
-                    </span>
-                    <h3 className="text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-                      Rubric Scoring Breakdown
-                    </h3>
+            <Card className="!p-4 space-y-3">
+              <div className="flex items-center justify-between"><span className="text-xs font-semibold">Camera preview</span><button type="button" aria-label={cameraOn ? 'Turn off camera preview' : 'Turn on camera preview'} className="p-1.5 rounded-lg hover:bg-[#F0ECE4] dark:hover:bg-[#24201C]" onClick={toggleCamera}>{cameraOn ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}</button></div>
+              {cameraOn && <video ref={video} autoPlay muted playsInline className="aspect-video w-full rounded-lg object-cover bg-[#24201C]" />}
+              <p className="text-xs leading-relaxed text-[#68645E] dark:text-[#9E988F]">{cameraOn ? 'Preview only. Video is never recorded.' : 'Optional. Turn it on to check your framing.'}</p>
+              {cameraError && <p role="alert" className="text-xs text-[#A33B3B]">{cameraError}</p>}
+            </Card>
+          </aside>
+          <div className="space-y-5 min-w-0">
+            {cameraOn && <video ref={(node) => { if (node && node.srcObject !== camera.current) node.srcObject = camera.current; }} autoPlay muted playsInline className="lg:hidden aspect-video max-w-sm w-full rounded-xl object-cover bg-[#24201C]" />}
+            {cameraError && <p role="alert" className="lg:hidden text-xs text-[#A33B3B]">{cameraError}</p>}
+            <Card className="!p-6 sm:!p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-[#7A263A] dark:text-[#D4AA6A] font-semibold">Question {currentIndex + 1} · {currentQuestion.topic}</p>
+                {window.speechSynthesis && <button type="button" disabled={voiceBusy} onClick={readQuestion} aria-label={speaking ? 'Stop reading question' : 'Read question aloud'} className="inline-flex items-center gap-1.5 text-xs text-[#68645E] dark:text-[#9E988F] hover:underline">{speaking ? <Square className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}{speaking ? 'Stop reading' : 'Read aloud'}</button>}
+              </div>
+              <h2 className="font-serif text-xl sm:text-2xl leading-snug font-semibold mt-5">{currentQuestion.questionText}</h2>
+            </Card>
+            {evaluation ? (
+              <Card className="!p-6 sm:!p-8 space-y-6">
+                <AnswerFeedback answer={evaluation} />
+                <div className="flex justify-end"><Button icon={ArrowRight} onClick={next}>{sessionComplete ? 'View results' : 'Next question'}</Button></div>
+              </Card>
+            ) : (
+              <Card className="!p-6 sm:!p-8 space-y-4">
+                <div className="flex items-center justify-between gap-3"><label htmlFor="interview-answer" className="font-semibold text-sm">Your answer</label><span role="status" className="text-[11px] text-[#68645E] dark:text-[#9E988F]">{draftStatus}</span></div>
+                <textarea id="interview-answer" value={answerText} onChange={(e) => updateAnswer(e.target.value)} disabled={isSubmitting || isFinishing} maxLength={20000} rows={11} placeholder="Explain your approach, then cover the details and trade-offs." className="mv-input !text-sm !leading-7 !p-4 min-h-[260px] resize-y" />
+                <AudioAnswer key={currentQuestion._id} timeExpired={started && secondsLeft === 0} disabled={isSubmitting || isFinishing} onTranscript={(text) => updateAnswer((previous) => (previous.trimEnd() ? previous.trimEnd() + '\n\n' : '') + text, true)} onBusyChange={(value, status) => { voicePrompt.current = ['requesting', 'choosing'].includes(status); voiceActive.current = value; setVoiceBusy(value); if (value) setSpeaking(false); }} />
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+                  <span className="text-xs text-[#68645E] dark:text-[#9E988F]">{wordCount} words · {answerText.length.toLocaleString()} / 20,000 characters</span>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" icon={SkipForward} disabled={locked} onClick={() => submit(true).catch(() => {})}>Skip</Button>
+                    <Button icon={Send} isLoading={isSubmitting} disabled={locked || !answerText.trim()} onClick={() => submit().catch(() => {})}>{isSubmitting ? 'Saving answer…' : 'Submit answer'}</Button>
                   </div>
-
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="text-xs text-[#68645E] dark:text-[#9E988F]">OVERALL:</span>
-                    <span className="px-3 py-1 rounded-[8px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#D4AA6A] font-bold text-base border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                      {currentEvaluation.overallScore}%
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4-Tier Criteria Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
-                  <div className="p-2 rounded-[8px] bg-[#EFF5F1] dark:bg-[#3F6B52]/20 border border-[#C2D9CB] dark:border-[#3F6B52]/40 text-center">
-                    <span className="text-[#3F6B52] dark:text-[#88BA9D] block text-[10px]">Technical</span>
-                    <strong className="text-sm font-bold text-[#3F6B52] dark:text-[#88BA9D]">
-                      {currentEvaluation.criteriaScores?.technicalCorrectness} / 40
-                    </strong>
-                  </div>
-                  <div className="p-2 rounded-[8px] bg-[#FAF0F2] dark:bg-[#7A263A]/20 border border-[#E8C5CC] dark:border-[#7A263A]/40 text-center">
-                    <span className="text-[#7A263A] dark:text-[#E8A5B2] block text-[10px]">Relevance</span>
-                    <strong className="text-sm font-bold text-[#7A263A] dark:text-[#E8A5B2]">
-                      {currentEvaluation.criteriaScores?.relevance} / 20
-                    </strong>
-                  </div>
-                  <div className="p-2 rounded-[8px] bg-[#FBF5EC] dark:bg-[#A66A24]/20 border border-[#E8D5BE] dark:border-[#A66A24]/40 text-center">
-                    <span className="text-[#A66A24] dark:text-[#DEAC74] block text-[10px]">Completeness</span>
-                    <strong className="text-sm font-bold text-[#A66A24] dark:text-[#DEAC74]">
-                      {currentEvaluation.criteriaScores?.completeness} / 20
-                    </strong>
-                  </div>
-                  <div className="p-2 rounded-[8px] bg-[#F0ECE4] dark:bg-[#24201C] border border-[#DED9D0] dark:border-[#332F2A] text-center">
-                    <span className="text-[#68645E] dark:text-[#9E988F] block text-[10px]">Clarity</span>
-                    <strong className="text-sm font-bold text-[#171717] dark:text-[#F7F4EE]">
-                      {currentEvaluation.criteriaScores?.clarity} / 20
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Diagnostic Feedback */}
-                <div className="p-3.5 rounded-[8px] bg-[#F0ECE4]/60 dark:bg-[#24201C]/60 border border-[#DED9D0] dark:border-[#332F2A]">
-                  <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-                    CRITIQUE & DIAGNOSTICS:
-                  </span>
-                  <p className="text-xs text-[#171717] dark:text-[#F7F4EE] leading-relaxed">
-                    {currentEvaluation.feedback}
-                  </p>
-                </div>
-
-                {/* Demonstrated vs Missing Concepts */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-                  <div className="p-3 rounded-[8px] bg-[#EFF5F1] dark:bg-[#3F6B52]/20 border border-[#C2D9CB] dark:border-[#3F6B52]/40 space-y-1">
-                    <span className="font-semibold text-[#3F6B52] dark:text-[#88BA9D] flex items-center gap-1 text-[11px]">
-                      <Check className="w-3.5 h-3.5" /> CONCEPTS DEMONSTRATED
-                    </span>
-                    <ul className="list-disc list-inside text-[#171717] dark:text-[#F7F4EE] space-y-0.5 text-[11px]">
-                      {currentEvaluation.correctConcepts?.map((c, i) => (
-                        <li key={i}>{c}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="p-3 rounded-[8px] bg-[#FBF5EC] dark:bg-[#A66A24]/20 border border-[#E8D5BE] dark:border-[#A66A24]/40 space-y-1">
-                    <span className="font-semibold text-[#A66A24] dark:text-[#DEAC74] flex items-center gap-1 text-[11px]">
-                      <AlertCircle className="w-3.5 h-3.5" /> OMITTED / EDGE CASES
-                    </span>
-                    <ul className="list-disc list-inside text-[#171717] dark:text-[#F7F4EE] space-y-0.5 text-[11px]">
-                      {currentEvaluation.missingConcepts?.map((c, i) => (
-                        <li key={i}>{c}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-1">
-                  <Button size="md" icon={ArrowRight} onClick={handleNextQuestion}>
-                    {currentIndex + 1 >= questions.length ? 'Finalize & View Dossier' : 'Proceed to Next Question'}
-                  </Button>
                 </div>
               </Card>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
+      {finishOpen && <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="finish-title">
+        <Card className="max-w-md w-full !p-7 space-y-4"><h2 id="finish-title" className="font-serif text-2xl font-bold">Finish this interview?</h2><p className="text-sm leading-relaxed text-[#68645E] dark:text-[#9E988F]">{answerText.trim() && !evaluation ? 'Your current answer will be submitted. ' : ''}You can review submitted answers and worked solutions afterwards.</p><div className="flex justify-end gap-2"><Button autoFocus variant="outline" onClick={() => setFinishOpen(false)}>Keep practicing</Button><Button onClick={() => finish()}>Finish interview</Button></div></Card>
+      </div>}
     </div>
   );
 };
-
-export default InterviewRoom;
+const MicIcon = () => <Volume2 className="w-7 h-7 text-[#7A263A] dark:text-[#D4AA6A]" />;

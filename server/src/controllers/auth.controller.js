@@ -6,10 +6,14 @@ export const register = async (req, res, next) => {
   try {
     const { name, email, password, targetRole, experienceLevel, preferredTopics, bio } = req.body;
 
-    if (!name || !email || !password) {
+    if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string' || !name.trim() || !email.trim() || !password) {
       throw new ValidationError('Please provide your name, email, and password.');
     }
 
+    if (name.trim().length > 100 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      throw new ValidationError('Enter a valid name and email address.');
+    }
+    if (Buffer.byteLength(password, 'utf8') > 72) throw new ValidationError('Password must be 72 bytes or fewer.');
     if (password.length < 6) {
       throw new ValidationError('Password must be at least 6 characters long.');
     }
@@ -49,7 +53,7 @@ export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       throw new ValidationError('Please provide both email and password.');
     }
 

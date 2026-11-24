@@ -1,178 +1,168 @@
-# MockVue — AI-Powered Mock Interview & Technical Evaluation Platform
+# MockVue
 
-> **A Production-Grade, Full-Stack Academic Capstone Project for Campus Placements & Technical Interviews.**
+Technical interview practice with typed and voice answers, saved drafts, interview history, and feedback.
 
-[![Node.js](https://img.shields.io/badge/Node.js-v24.19.0-green.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-v18.3.1-blue.svg)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-v6.0.7-purple.svg)](https://vitejs.dev/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v3.4.17-38bdf8.svg)](https://tailwindcss.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-brightgreen.svg)](https://www.mongodb.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Project report
 
----
+[Download the major project report](docs/MockVue%20Major%20Project%20Report.docx).
+It includes the current architecture, application screenshots, source excerpts,
+verification results, and known limitations.
 
-## 1. Executive Summary & Problem Statement
+## Run locally
 
-College placement preparation frequently suffers from a critical gap: students either solve disconnected algorithmic problems on competitive programming sites without verbalizing their thought processes, or they experience high stress during real interviews due to unfamiliarity with timed, question-by-question technical evaluations.
+Requires Node.js 18+ and Python 3.10+ for local speech transcription.
 
-**MockVue** bridges this gap by providing an end-to-end, AI-powered interview platform designed specifically for campus placements and technical evaluations.
+    npm run install:all
+    python -m pip install -r server/speech/requirements.txt
 
-### Key Capabilities:
-1. **Dynamic Question Generation:** Adapts questions dynamically to target roles (SDE, Frontend, Backend, Full Stack, Data Analyst), topic domains (DSA, DBMS, OS, Networks, System Design), and difficulty tiers (Easy, Medium, Hard).
-2. **Dual-Mode Answer Submission:** Supports both typed structured explanations and live speech-to-text voice dictation using browser Web Speech APIs.
-3. **4-Tier Semantic Evaluation Rubric:** Evaluates responses out of 100 points based on:
-   - **Technical Correctness (40%)**
-   - **Relevance (20%)**
-   - **Completeness & Edge Cases (20%)**
-   - **Clarity & Structure (20%)**
-4. **Anti-Cheating & Assessment Integrity:** Reference answers and grading rubrics are strictly sanitized and concealed on the server until the session is completed.
-5. **Privacy-Preserving Focus Monitoring:** Tracks candidate presence and multi-face alerts locally in the browser without recording or streaming raw video footage.
-6. **Data-Driven Performance Analytics:** Aggregates real MongoDB records to compute score trajectories over time, topic proficiency bars, and personalized next-interview recommendations.
+Copy server/.env.example to server/.env and client/.env.example to client/.env.
+Set a unique JWT_SECRET in server/.env, then run:
 
----
+    npm run dev
 
-## 2. System Architecture & Tech Stack
+- App: http://localhost:5173
+- API health: http://localhost:5000/api/health
 
-```text
-                            ┌──────────────────────────────────────────────┐
-                            │              BROWSER / CLIENT                │
-                            │  React 18 • Vite • Tailwind • Recharts • STT │
-                            └──────────────────────┬───────────────────────┘
-                                                   │
-                                      HTTPS / REST (JWT Bearer)
-                                                   │
-                            ┌──────────────────────▼───────────────────────┐
-                            │             EXPRESS API BACKEND              │
-                            │  Security Guard • Engine • Rubric Evaluator  │
-                            └───────┬──────────────┬──────────────┬────────┘
-                                    │              │              │
-                   Mongoose / ODM   │              │ Strategy     │ Local Privacy
-                                    │              │ Pattern      │ Telemetry
-           ┌────────────────────────▼───┐   ┌──────▼──────┐   ┌───▼─────────────────┐
-           │     MONGODB DATABASE       │   │  AI SERVICE │   │  FOCUS MONITORING   │
-           │ Users, Interviews, Answers,│   │(Gemini / OAI│   │  (MediaPipe Client  │
-           │ Questions, MonitoringLogs  │   │ / Fallback) │   │   Presence Engine)  │
-           └────────────────────────────┘   └─────────────┘   └─────────────────────┘
-```
+The first speech-service start downloads the Whisper model if it is not cached.
+WHISPER_MODEL defaults to base; PYTHON_BIN defaults to python.
+Recordings can also be uploaded as WAV, MP3, MP4, or WebM. Recordings are limited
+to 15 MB and five minutes. Audio is transcribed on the local server and temporary
+uploads are removed after processing. No third-party speech API is required.
 
-### Technology Breakdown:
-* **Frontend:** React 18, Vite 6, Tailwind CSS 3 (Dark/Light mode design system), React Router 6, Axios, Recharts, Lucide Icons, Canvas Confetti.
-* **Backend:** Node.js (v24), Express 4, Mongoose 8, JWT, bcryptjs, Helmet, CORS, Express-Rate-Limit, Morgan.
-* **Database Resilience:** Standard MongoDB with automatic in-memory fallback (`mongodb-memory-server`) during development and offline viva demonstrations.
-* **AI Layer:** Provider-agnostic adapter decoupling business logic from external LLMs (Google Gemini, OpenAI GPT-4o-mini, or Curated Placement Bank).
+## Data
 
----
+The server uses MONGODB_URI when available. In development, it can launch a
+local MongoDB instance with persistent storage under .local-data/mongodb.
+That directory, environment files, and logs are ignored by Git.
+Drafts save on the device and sync to the server during an active interview.
+Server checkpoints made before the deadline can be recovered for review after browser suspension.
+Unsubmitted device drafts are recoverable in the report without changing scores.
 
-## 3. Database Schema Design
+## Interview modes
 
-* **`User`:** Identity, bcrypt password hash, placement preferences (`targetRole`, `experienceLevel`, `preferredTopics`, `bio`).
-* **`Interview`:** Session status state machine (`created` → `in_progress` → `completed`), question references, overall score, timestamp metrics.
-* **`Question`:** Text, topic, difficulty, type, reference concepts, evaluation criteria (sanitized during active interview).
-* **`Answer`:** Candidate response, overall rubric score (0–100), 4-tier criteria breakdown, identified concepts, missing concepts, constructive feedback, and model answer.
-* **`MonitoringEvent`:** Presence events (`no_face_detected`, `multiple_faces_detected`, `tab_switched`), timestamps, durations, confidence scores.
+- Practice: camera preview and full screen are optional. Tab changes do not end
+  the session. The timer starts when Start interview is clicked.
+- Assessment: full screen is required; leaving full screen or switching tabs
+  ends the session. Browser permission dialogs are exempted. Camera previews
+  are never scored, and no skin-tone or gaze heuristics are used.
 
----
+The server owns start times, deadlines, answer order, and completion. Submitted
+answers are immutable; request retries return the saved answer. Unanswered and
+skipped questions contribute zero to a fully model-graded interview score. A session containing guided, ungraded answers has no overall correctness score. Practice
+allows up to two minutes for an in-flight transcript or request to finish after
+the timer reaches zero; assessment has a two-second network grace period.
 
-## 4. API Endpoints
+## AI feedback without API keys
 
-### Authentication
-* `POST /api/auth/register` — Register candidate account & issue JWT.
-* `POST /api/auth/login` — Authenticate credentials & return session token.
-* `GET /api/auth/me` — Fetch authenticated profile.
+MockVue uses local models or its built-in question bank. There are no hosted
+LLM adapters, provider keys, accounts, quotas, or per-request API charges.
+Speech also runs locally. Hardware, electricity, internet downloads and any
+optional hosting still have their normal costs.
 
-### Candidate Profile
-* `GET /api/users/profile` — Fetch candidate settings and preferences.
-* `PUT /api/users/profile` — Update target role, experience level, topics, and bio.
+For local model feedback, install [LM Studio 0.4 or later](https://lmstudio.ai/) and download
+a model that fits your machine. If a model is already downloaded, reuse it.
+Load it under the `mockvue-local` identifier, then start the loopback server:
 
-### Interview Engine
-* `POST /api/interviews/generate` — Generate dynamic AI placement questions & initialize interview.
-* `GET /api/interviews/:id` — Fetch interview session (questions sanitized during active state).
-* `POST /api/interviews/:id/start` — Transition status to `in_progress` and start timer.
-* `POST /api/interviews/:id/answer` — Submit answer, evaluate against rubric, and progress pointer.
-* `POST /api/interviews/:id/complete` — Finalize session and compute cumulative score.
-* `GET /api/interviews/history` — Retrieve candidate's past interview sessions.
-* `GET /api/interviews/:id/report` — Fetch comprehensive end-of-interview assessment report.
+    lms ls
+    lms load <your-model-key> --identifier mockvue-local --context-length 8192 --parallel 1 --ttl 1800
+    npm run ai:start
+    npm run ai:status
 
-### Analytics & Monitoring
-* `GET /api/analytics/overview` — Aggregated counts, mean score, and practice duration.
-* `GET /api/analytics/performance` — Chronological score trends and topic proficiency bars.
-* `POST /api/interviews/:id/monitoring` — Log client-side presence/focus event.
+Free sufficient RAM and GPU memory before loading. Model names are listed by
+`lms ls`; `<your-model-key>` is a placeholder, not a literal command argument.
+The model file and LM Studio runtime must both be installed for offline use.
+MockVue never downloads or loads a model automatically during an interview.
 
----
+The default server settings are:
 
-## 5. Local Setup & Quick Start
+    AI_PROVIDER=local
+    LOCAL_AI_BACKEND=lmstudio
+    LOCAL_AI_URL=http://127.0.0.1:1234
+    LOCAL_AI_MODEL=mockvue-local
+    LOCAL_AI_TIMEOUT_MS=60000
 
-### Prerequisites
-* Node.js v18+ (tested on v24.19)
-* npm v9+
+The endpoint uses an OpenAI-compatible request format, but all inference is
+sent to the local LM Studio process. It does not contact OpenAI. Requests have
+no authorization header, use structured JSON output, validate topic/count and
+rubric values, and reject hosted endpoints and HTTP redirects.
 
-### 1. Clone & Install
-```bash
-# Clone the repository
-git clone https://github.com/mockvue/mockvue.git
-cd mockvue
+[Ollama](https://docs.ollama.com/) is also supported. After installing it and
+pulling a suitable local model, such as `ollama pull qwen3:4b`, set:
 
-# Install all dependencies (root, server, and client)
-npm run install:all
-```
+    LOCAL_AI_BACKEND=ollama
+    LOCAL_AI_URL=http://127.0.0.1:11434
+    LOCAL_AI_MODEL=qwen3:4b
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env` in `server/`:
-```bash
-cp server/.env.example server/.env
-```
+For Ollama, set `OLLAMA_NO_CLOUD=1` in the environment that starts `ollama serve`
+to disable cloud features. Cloud-tagged model names are rejected by MockVue.
 
-*(Note: MockVue runs out-of-the box using its curated offline placement bank and automatic in-memory MongoDB without requiring an external DB installation or paid API keys).*
+If the local model is stopped, missing, too slow or returns invalid output,
+practice continues with a worked answer and a reference-term checklist, without
+assigning a correctness score. Set `AI_PROVIDER=fallback` for this mode alone.
+It needs no LLM installation. Mentioned terms can be wrong and valid paraphrases
+can be missed; checklist coverage is never used as a grade or readiness metric.
 
-### 3. Launch the Platform
-```bash
-# Run both client and server concurrently
-npm run dev
-```
+The curated catalogue has 139 distinct questions, worked study answers and
+follow-ups across 13 topics. Questions retain the exact requested difficulty.
+Selection balances topics and avoids questions from the last five sessions when
+the pool permits. HR and Behavioral stay separate. Smaller pools and topic
+coverage limits are disclosed instead of silently substituting difficulty or
+unrelated topics. Role choices set relevant topic defaults; explicitly chosen
+topics control the final bank selection. Catalogue questions are preferred;
+local question generation is attempted only when the bank cannot fill a request.
+Model-generated study answers are labeled separately from curated ones.
 
-* **Client:** `http://localhost:5173`
-* **API Server:** `http://localhost:5000`
-* **Healthcheck:** `http://localhost:5000/api/health`
+Answers are persisted before grading. A single worker claims durable database
+jobs, retries interrupted leases and records the actual feedback provider.
+Candidates can continue while feedback is pending. Results update automatically;
+slow or invalid model output falls back to an ungraded study review. Curated
+answers ground the grader and remain the displayed study solution. Historical
+keyword scores and unknown-source scores are excluded from current score metrics.
+ Saved answers record their actual feedback provider independently
+of the question source. Local model feedback can also be wrong and has not
+been validated against an independently marked student-answer dataset.
 
----
+## Verification
 
-## 6. Automated Testing Suite
+    npm test
+    npm run build:client
 
-MockVue includes automated end-to-end integration tests:
+The regression suite uses an isolated temporary database, not local user data.
+It covers authentication, expired tokens, ownership, report privacy, deadlines,
+answer ordering, concurrent submissions, resume, skipping, completion, topic
+coverage, score validation, and microphone resource cleanup.
 
-```bash
-# Run AI Integration & Fallback Tests
-node server/tests/ai_service.test.js
+Optional local speech smoke tests (requires Python speech dependencies):
 
-# Run Full 10-Step End-to-End User Flow Test
-node server/tests/e2e_full_flow.test.js
-```
+    npm run test:speech --prefix server
 
----
+For the speech-fixture test, set MOCKVUE_SPEECH_FIXTURE to a recording containing
+the word "hash", or place it at .local-data/speech-test.wav. A silence test runs
+as well. The older running-server flow can be run with:
 
-## 7. Comprehensive Viva Defense Q&A
+    npm run test:legacy --prefix server
 
-### Q1: Why use an Adapter Pattern for the AI Service layer instead of calling an LLM directly in the controller?
-**Answer:** Directly calling an LLM inside an Express controller creates tight vendor coupling. If an API provider changes its endpoints, pricing, or experiences an outage during an evaluation, the entire application fails. The Adapter Pattern defines a strict `AIProvider` interface (`generateQuestions` and `evaluateAnswer`). Concrete adapters (Gemini, OpenAI, Fallback) implement this interface. If an external API key is invalid or times out (>12s), the `AIServiceManager` catches the error and smoothly falls back to the curated placement bank without crashing the user session.
+Microphone permission and hardware behavior should be checked in the intended
+browser. Local AI protocol tests mock model responses; they do not establish
+the quality of a downloaded model. Check `npm run ai:status` and exercise actual
+question generation and feedback before reporting a local model as verified.
 
-### Q2: How is cheating prevented during active interviews?
-**Answer:** In `interview.controller.js`, when a candidate queries `GET /api/interviews/:id`, the backend inspects `interview.status`. If the interview is `created` or `in_progress`, the server strips `referenceConcepts` and `evaluationCriteria` from all question objects before dispatching the JSON payload. Only after the interview reaches `status === 'completed'` does the report route expose expected answers and rubric keys.
 
-### Q3: Why run focus monitoring locally on the client instead of streaming video to a server?
-**Answer:** Streaming 30 FPS video to a Node.js or Python backend consumes enormous server bandwidth, introduces high cloud latency, and creates major privacy liabilities. MockVue executes computer vision locally in the browser using MediaPipe / WebAssembly. Frames are analyzed on the candidate's GPU, and only lightweight telemetry events (e.g. `no_face_detected` for 6s) are dispatched via JSON to the backend. Raw video footage is never stored.
+Optional live model calibration (requires a loaded `mockvue-local` LM Studio model):
 
-### Q4: How does the countdown timer handle page refreshes or background browser throttling?
-**Answer:** Rather than relying on simple JavaScript `setInterval` counters (which drift when browser tabs are backgrounded or reset on page reload), MockVue uses a **target timestamp architecture**. When the interview starts, the server and client store the absolute Unix timestamp (`targetEndTime = Date.now() + duration * 60 * 1000`). On every interval tick or reload, remaining seconds are calculated as `Math.max(0, targetEndTime - Date.now())`. This ensures accurate, jump-free time tracking regardless of reloads or tab switches.
+    node server/scripts/audit-local-ai.mjs
 
-### Q5: How does the database handle local development if no local MongoDB service is installed?
-**Answer:** In `server/src/config/db.js`, the connection attempts to reach `MONGODB_URI` with a 3-second timeout. If the connection fails in `development` mode, it dynamically initializes an embedded `mongodb-memory-server` instance. This guarantees that evaluators and professors can run the project on any computer without pre-installing MongoDB.
+This compares worked answers and paraphrases with incorrect reasoning, keyword
+lists, unrelated text and instructions asking for full marks. Inspect the saved
+feedback, not just the totals. It is a small smoke check, not an independent
+benchmark. The 9B model on this machine has not completed this calibration:
+loads encountered cache-allocation failures and a brief successful load did not
+produce a completed grading response. No new model was downloaded because the
+system drive had about 1 GB free at the final check. Guided practice and local
+speech transcription are verified; local grading quality remains unverified.
 
----
-
-## 8. Academic Integrity & Ethics
-
-* **Focus Monitoring Disclaimer:** All computer vision telemetry is strictly framed as engagement and presence indicators. The system makes no claims regarding lie detection, intent, or conclusive cheating proof.
-* **Rubric Transparency:** Candidates receive transparent breakdowns across 4 distinct criteria so they can systematically prepare for campus placement interviews.
-
----
-*Built with ❤️ for B.Tech Campus Placement Success.*
+Technical reference points used while correcting the catalogue include
+[OpenJDK HashMap](https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/HashMap.java),
+[PostgreSQL isolation](https://www.postgresql.org/docs/current/transaction-iso.html),
+[Spring transaction proxies](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)
+and [Python threading](https://docs.python.org/3/library/threading.html).

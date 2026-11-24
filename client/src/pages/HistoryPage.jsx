@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  History, 
-  Calendar, 
-  ChevronRight, 
+import {
+  History,
+  Calendar,
+  ChevronRight,
   AlertCircle,
   Plus,
   BookOpen
@@ -13,6 +13,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import api from '../services/api';
+import { PageError } from '../components/PageError';
 
 export const HistoryPage = () => {
   const [interviews, setInterviews] = useState([]);
@@ -31,10 +32,11 @@ export const HistoryPage = () => {
       });
   }, []);
 
+  if (error) return <PageError title="Could not load your interviews" message={error} />;
   if (loading) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
-        <Spinner size="lg" label="Retrieving Examination Archives..." />
+        <Spinner size="lg" label="Loading interviews..." />
       </div>
     );
   }
@@ -44,18 +46,18 @@ export const HistoryPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#DED9D0] dark:border-[#332F2A]">
         <div>
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#68645E] dark:text-[#9E988F]">
-            ARCHIVAL RECORDS
+            Your interviews
           </span>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-            Assessment History & Transcripts
+            Interview history
           </h1>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5 font-mono">
-            VERIFIED LONGITUDINAL LOG OF SESSIONS & RUBRIC OUTCOMES
+            Review past answers and results, or continue an unfinished interview.
           </p>
         </div>
         <Link to="/interviews/new">
           <Button icon={Plus} size="md">
-            New Assessment
+            New interview
           </Button>
         </Link>
       </div>
@@ -72,19 +74,19 @@ export const HistoryPage = () => {
           <div className="w-10 h-10 rounded-lg bg-[#F0ECE4] dark:bg-[#24201C] text-[#68645E] dark:text-[#9E988F] flex items-center justify-center mx-auto mb-3 border border-[#DED9D0] dark:border-[#332F2A]">
             <History className="w-5 h-5 text-[#7A263A] dark:text-[#D4AA6A]" />
           </div>
-          <h2 className="text-sm font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">No Past Assessments Recorded</h2>
+          <h2 className="text-sm font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">No interviews yet</h2>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-5">
-            Complete your first mock interview to establish your historical performance profile.
+            Start an interview. Your questions, answers, and results will appear here.
           </p>
           <Link to="/interviews/new">
-            <Button size="sm" icon={Plus}>Start First Assessment</Button>
+            <Button size="sm" icon={Plus}>Start an interview</Button>
           </Link>
         </Card>
       ) : (
         <div className="space-y-3">
           {interviews.map((item) => {
-            const isCompleted = item.status === 'completed';
-            const score = item.overallScore || 0;
+            const isCompleted = ['completed', 'terminated', 'abandoned'].includes(item.status);
+            const score = item.scoreStatus === 'pending' ? 'Pending' : item.scoreStatus === 'ungraded' ? 'Ungraded' : typeof item.overallScore === 'number' ? item.overallScore + '%' : 'Ungraded';
 
             return (
               <Card key={item._id} hover className="p-4 sm:p-5 shadow-paper">
@@ -117,16 +119,16 @@ export const HistoryPage = () => {
                   <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-end border-t sm:border-t-0 pt-2.5 sm:pt-0 border-[#DED9D0] dark:border-[#332F2A]">
                     {isCompleted && (
                       <div className="text-right font-mono">
-                        <span className="text-[10px] text-[#68645E] dark:text-[#9E988F] block uppercase">Rubric Score</span>
+                        <span className="text-[10px] text-[#68645E] dark:text-[#9E988F] block uppercase">Score</span>
                         <span className="text-lg font-bold text-[#7A263A] dark:text-[#D4AA6A]">
-                          {score}%
+                          {score}
                         </span>
                       </div>
                     )}
 
                     <Link to={isCompleted ? `/interviews/${item._id}/results` : `/interviews/${item._id}/prep`}>
                       <Button variant={isCompleted ? 'outline' : 'primary'} size="sm" icon={ChevronRight}>
-                        {isCompleted ? 'View Dossier' : 'Resume'}
+                        {isCompleted ? 'View results' : 'Resume'}
                       </Button>
                     </Link>
                   </div>

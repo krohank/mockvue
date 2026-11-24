@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  BarChart3, 
-  AlertCircle, 
-  Check, 
-  Compass, 
+import {
+  BarChart3,
+  AlertCircle,
+  Check,
+  Compass,
   Plus,
   TrendingUp,
   Target
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  CartesianGrid, 
-  BarChart, 
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  BarChart,
   Bar
 } from 'recharts';
 import { Button } from '../components/ui/Button';
@@ -25,6 +25,7 @@ import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import api from '../services/api';
+import { PageError } from '../components/PageError';
 
 export const AnalyticsPage = () => {
   const [overview, setOverview] = useState(null);
@@ -45,10 +46,11 @@ export const AnalyticsPage = () => {
       });
   }, []);
 
+  if (error) return <PageError title="Could not load your progress" message={error} />;
   if (loading) {
     return (
       <div className="min-h-[75vh] flex items-center justify-center">
-        <Spinner size="lg" label="Computing Longitudinal Performance Telemetry..." />
+        <Spinner size="lg" label="Loading your progress..." />
       </div>
     );
   }
@@ -56,7 +58,7 @@ export const AnalyticsPage = () => {
   const scoreTrend = analytics?.scoreTrend || [];
   const topicPerformance = analytics?.topicPerformance || [];
   const recommendation = analytics?.recommendation;
-  const hasData = scoreTrend.length > 0;
+  const hasData = scoreTrend.length > 0 || (analytics?.topicPerformance?.length || 0) > 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in font-sans">
@@ -65,20 +67,20 @@ export const AnalyticsPage = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="font-mono text-xs text-[#7A263A] dark:text-[#D4AA6A] font-semibold uppercase tracking-wider">
-              LONGITUDINAL TELEMETRY
+              Your practice
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] tracking-tight">
-            Performance Analytics & Progression
+            Progress
           </h1>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F] mt-0.5 font-mono">
-            EMPIRICALLY TRACKED SCORING MATRICES ACROSS ALL ASSESSMENTS
+            Scores and topics from your interviews.
           </p>
         </div>
 
         <Link to="/interviews/new">
           <Button icon={Plus} size="md">
-            New Assessment
+            New interview
           </Button>
         </Link>
       </div>
@@ -94,51 +96,51 @@ export const AnalyticsPage = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-4 sm:p-5 shadow-paper">
           <span className="text-[11px] font-mono font-medium uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-            Completed Assessments
+            Completed interviews
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="font-mono text-3xl font-bold text-[#171717] dark:text-[#F7F4EE]">
               {overview?.completedCount || 0}
             </span>
-            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">of {overview?.totalInterviews || 0} initiated</span>
+            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">of {overview?.totalInterviews || 0} started</span>
           </div>
         </Card>
 
         <Card className="p-4 sm:p-5 shadow-paper">
           <span className="text-[11px] font-mono font-medium uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-            Mean Rubric Score
+            Average score
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="font-mono text-3xl font-bold text-[#7A263A] dark:text-[#D4AA6A]">
-              {overview?.averageScore ? `${overview.averageScore}%` : '—'}
+              {overview?.gradedCount ? `${overview.averageScore}%` : '—'}
             </span>
             <Badge variant={overview?.averageScore >= 75 ? 'success' : 'neutral'} size="sm">
-              {overview?.readinessStatus?.toUpperCase() || 'INITIAL'}
+              {overview?.gradedCount ? 'Model graded' : 'No grades yet'}
             </Badge>
           </div>
         </Card>
 
         <Card className="p-4 sm:p-5 shadow-paper">
           <span className="text-[11px] font-mono font-medium uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-            Active Practice Time
+            Practice time
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="font-mono text-3xl font-bold text-[#171717] dark:text-[#F7F4EE]">
               {overview?.totalMinutesPracticed || 0}m
             </span>
-            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Live assessment</span>
+            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">In interviews</span>
           </div>
         </Card>
 
         <Card className="p-4 sm:p-5 shadow-paper">
           <span className="text-[11px] font-mono font-medium uppercase tracking-wider text-[#68645E] dark:text-[#9E988F] block mb-1">
-            Evaluations Indexed
+            Answers reviewed
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="font-mono text-3xl font-bold text-[#3F6B52] dark:text-[#88BA9D]">
               {analytics?.totalAnswersAnalyzed || 0}
             </span>
-            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Rubric records</span>
+            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Model-graded answers</span>
           </div>
         </Card>
       </div>
@@ -149,19 +151,19 @@ export const AnalyticsPage = () => {
           <div className="space-y-1.5 max-w-3xl">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-[#FAF0F2] dark:bg-[#7A263A]/20 text-[#7A263A] dark:text-[#E8A5B2] border border-[#E8C5CC] dark:border-[#7A263A]/40">
-                RECOMMENDED REMEDIATION
+                What to practice next
               </span>
-              <Badge variant="warning" size="sm">{recommendation.difficulty?.toUpperCase()} TIER</Badge>
+              <Badge variant="warning" size="sm">{recommendation.difficulty?.toUpperCase()}</Badge>
             </div>
             <h3 className="text-base font-serif font-bold text-[#171717] dark:text-[#F7F4EE]">
-              Priority Domain: {recommendation.topic}
+              Topic: {recommendation.topic}
             </h3>
             <p className="text-xs text-[#68645E] dark:text-[#9E988F] leading-relaxed font-sans">
               {recommendation.reason}
             </p>
           </div>
 
-          <Link to="/interviews/new" className="shrink-0">
+          <Link to={"/interviews/new?topic=" + encodeURIComponent(recommendation.topic) + "&difficulty=" + encodeURIComponent(recommendation.difficulty)} className="shrink-0">
             <Button size="sm">
               Practice {recommendation.topic}
             </Button>
@@ -176,13 +178,13 @@ export const AnalyticsPage = () => {
             <BarChart3 className="w-5 h-5 text-[#7A263A] dark:text-[#D4AA6A]" />
           </div>
           <h3 className="text-sm font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">
-            Telemetry Establishing Baseline
+            No model grades yet
           </h3>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-5 leading-relaxed">
-            Complete your first mock interview to unlock chronological score trend charts and topic breakdown bars.
+            Score charts require local-model grading. Guided practice answers remain ungraded and are excluded from these charts.
           </p>
           <Link to="/interviews/new">
-            <Button size="sm" icon={Plus}>Start Baseline Assessment</Button>
+            <Button size="sm" icon={Plus}>Start an interview</Button>
           </Link>
         </Card>
       ) : (
@@ -190,8 +192,8 @@ export const AnalyticsPage = () => {
           {/* Chart 1: Score Progression Over Time */}
           <Card className="p-5 shadow-paper">
             <CardHeader
-              title="Score Progression Chronology"
-              subtitle="Tracking candidate rubric scoring improvement across consecutive mock interviews"
+              title="Scores over time"
+              subtitle="Your score for each completed interview."
             />
             <CardBody className="h-64 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
@@ -224,8 +226,8 @@ export const AnalyticsPage = () => {
           {/* Chart 2: Average Score by Topic */}
           <Card className="p-5 shadow-paper">
             <CardHeader
-              title="Performance by Technical Domain"
-              subtitle="Mean percentage scores computed from semantic answer rubric evaluations"
+              title="Scores by topic"
+              subtitle="Your average answer score in each topic."
             />
             <CardBody className="h-64 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
@@ -256,7 +258,7 @@ export const AnalyticsPage = () => {
           <Card className="p-5 shadow-paper">
             <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE] mb-3 flex items-center gap-1.5">
               <Check className="w-4 h-4 text-[#3F6B52]" />
-              Verified Domain Strengths (≥65%)
+              Higher-scoring topics (65%+)
             </h3>
             {analytics?.strongestTopics?.length > 0 ? (
               <div className="space-y-2">
@@ -268,14 +270,14 @@ export const AnalyticsPage = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Continue practicing to identify confirmed strengths.</p>
+              <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Complete more interviews to see your higher-scoring topics.</p>
             )}
           </Card>
 
           <Card className="p-5 shadow-paper">
             <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#171717] dark:text-[#F7F4EE] mb-3 flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4 text-[#A66A24]" />
-              Focus Areas for Growth (&lt;65%)
+              Topics to work on (below 65%)
             </h3>
             {analytics?.weakestTopics?.length > 0 ? (
               <div className="space-y-2">
@@ -287,7 +289,7 @@ export const AnalyticsPage = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">No weak topic alerts. All evaluated domains are above 65%.</p>
+              <p className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">No topics are below 65%.</p>
             )}
           </Card>
         </div>

@@ -13,14 +13,14 @@ export const NotFoundPage = () => {
         ERROR CODE 404
       </span>
       <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-2 tracking-tight">
-        Document Not Located
+        Page not found
       </h1>
       <p className="text-xs sm:text-sm text-[#68645E] dark:text-[#9E988F] max-w-sm mb-6 leading-relaxed">
-        The requested record or interface view does not exist within the MockVue archive.
+        This page does not exist or has moved.
       </p>
       <Link to="/">
         <Button icon={ArrowLeft} size="sm">
-          Return to Console
+          Go to homepage
         </Button>
       </Link>
     </div>

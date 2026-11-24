@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
 import interviewRoutes from './routes/interview.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
+import speechRoutes from './routes/speech.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -40,7 +41,7 @@ app.use(
 // Request Logging
 if (env.isDev) {
   app.use(morgan('dev'));
-} else {
+} else if (env.NODE_ENV !== 'test') {
   app.use(morgan('combined'));
 }
 
@@ -77,6 +78,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/speech', speechRoutes);
 
 // Fallthrough 404 & Centralized Error Handler
 app.use(notFoundHandler);
