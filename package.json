@@ -10,9 +10,7 @@
     "dev:client": "npm run dev --prefix client",
     "build:client": "npm run build --prefix client",
     "start:server": "npm run start --prefix server",
-    "test": "npm test --prefix server && npm test --prefix client",
-    "ai:start": "lms server start --bind 127.0.0.1 --port 1234",
-    "ai:status": "node server/scripts/local-ai-status.mjs"
+    "test": "npm test --prefix server && npm test --prefix client"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

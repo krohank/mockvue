@@ -40,6 +40,11 @@
 
 ## Practical limits
 
+- Scoring is a local rubric overlap estimate (no LLM). It cannot establish correctness:
+  valid answers in unfamiliar vocabulary can be under-scored and unknown false
+  statements missed. Behavioral scores check story structure only. Independently
+  marked human answers are still needed to calibrate the thresholds.
+
 - AI no longer requires hosted provider keys. Local model feedback requires
   a running LM Studio or Ollama model with enough memory. Until that model is
   available, practice uses worked solutions and a reference-term checklist without correctness scores.

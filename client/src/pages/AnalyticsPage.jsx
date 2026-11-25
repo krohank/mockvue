@@ -115,7 +115,7 @@ export const AnalyticsPage = () => {
               {overview?.gradedCount ? `${overview.averageScore}%` : '—'}
             </span>
             <Badge variant={overview?.averageScore >= 75 ? 'success' : 'neutral'} size="sm">
-              {overview?.gradedCount ? 'Model graded' : 'No grades yet'}
+              {overview?.gradedCount ? 'Rubric scored' : 'No scores yet'}
             </Badge>
           </div>
         </Card>
@@ -140,7 +140,7 @@ export const AnalyticsPage = () => {
             <span className="font-mono text-3xl font-bold text-[#3F6B52] dark:text-[#88BA9D]">
               {analytics?.totalAnswersAnalyzed || 0}
             </span>
-            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Model-graded answers</span>
+            <span className="text-xs text-[#68645E] dark:text-[#9E988F] font-mono">Scored answers</span>
           </div>
         </Card>
       </div>
@@ -178,10 +178,10 @@ export const AnalyticsPage = () => {
             <BarChart3 className="w-5 h-5 text-[#7A263A] dark:text-[#D4AA6A]" />
           </div>
           <h3 className="text-sm font-serif font-bold text-[#171717] dark:text-[#F7F4EE] mb-1">
-            No model grades yet
+            No scores yet
           </h3>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F] mb-5 leading-relaxed">
-            Score charts require local-model grading. Guided practice answers remain ungraded and are excluded from these charts.
+            Charts use answers scored by the local rubric checker. Answers without a saved answer to compare with stay unscored and are excluded.
           </p>
           <Link to="/interviews/new">
             <Button size="sm" icon={Plus}>Start an interview</Button>

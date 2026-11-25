@@ -2,7 +2,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { startSpeech, stopSpeech } from './services/speechService.js';
-import { startEvaluationWorker, stopEvaluationWorker } from './services/evaluationQueue.js';
+import { startEvaluationWorker, stopEvaluationWorker, requeueUngradedAnswers } from './services/evaluationQueue.js';
 
 let server;
 
@@ -10,6 +10,7 @@ const startServer = async () => {
   try {
     // 1. Connect to Database
     await connectDB();
+    await requeueUngradedAnswers().then((n) => n && console.log(`[Grading] Re-scoring ${n} saved answer(s) with the local rubric checker.`)).catch((error) => console.warn('[Grading] Could not queue saved answers:', error.message));
     startEvaluationWorker();
     startSpeech().catch((error) => console.warn('[Speech]', error.message));
 
@@ -20,7 +21,7 @@ const startServer = async () => {
       console.log(`📡 Port: http://localhost:${env.PORT}`);
       console.log(`🩺 Healthcheck: http://localhost:${env.PORT}/api/health`);
       console.log(`🌐 Allowed Client URL: ${env.CLIENT_URL}`);
-      console.log(`🤖 AI Provider: ${env.AI_PROVIDER}`);
+      console.log(`Grading provider: ${env.AI_PROVIDER}`);
       console.log(`====================================================`);
     });
   } catch (error) {

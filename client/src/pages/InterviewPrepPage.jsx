@@ -67,11 +67,11 @@ export const InterviewPrepPage = () => {
           <ul className="space-y-4 text-sm leading-relaxed text-[#68645E] dark:text-[#9E988F]">
             <li className="flex gap-3"><Check className="w-4 h-4 shrink-0 text-[#3F6B52] mt-1" />Answer one question at a time. You can type, record, or upload an audio clip.</li>
             <li className="flex gap-3"><Check className="w-4 h-4 shrink-0 text-[#3F6B52] mt-1" />Review and edit each transcript before submitting. Drafts save on this device.</li>
-            <li className="flex gap-3"><Check className="w-4 h-4 shrink-0 text-[#3F6B52] mt-1" />{aiReady === true ? 'Local-model feedback uses accuracy, relevance, completeness and clarity. If grading fails, you still receive a study answer without a score.' : aiReady === false ? 'Guided practice is available. Review worked answers and reference-term checklists; no correctness scores are assigned while the local model is unavailable.' : 'Worked answers are available. Model grading requires a running local model; otherwise answers remain ungraded.'}</li>
+            <li className="flex gap-3"><Check className="w-4 h-4 shrink-0 text-[#3F6B52] mt-1" />{'Each answer is scored by a local rubric checker (no AI model) that compares your wording with the saved answer: accuracy, relevance, completeness and clarity, plus the key points you covered or missed.'}</li>
           </ul>
           <div className="rounded-xl border border-[#DED9D0] dark:border-[#332F2A] p-4 space-y-2">
             <p className="font-semibold text-sm flex items-center gap-2"><ShieldCheck className="w-4 h-4" />{interview.mode === 'assessment' ? 'Assessment rules' : 'Practice mode'}</p>
-            <p className="text-xs leading-relaxed text-[#68645E] dark:text-[#9E988F]">{interview.mode === 'assessment' ? 'Full screen is required. Leaving full screen or switching tabs ends the assessment. Microphone permission prompts are allowed.' : 'Full screen and camera are optional. You can switch tabs and return to your saved draft.'}</p>
+            <p className="text-xs leading-relaxed text-[#68645E] dark:text-[#9E988F]">{interview.mode === 'assessment' ? 'Full screen is required. Leaving full screen or switching tabs ends the assessment. Microphone permission prompts are allowed.' : 'The interview starts in full screen. You can exit full screen or switch tabs and return to your saved draft. Camera is optional.'}</p>
           </div>
           {interview.generationNotice && <p className="text-xs leading-relaxed text-[#68645E] dark:text-[#9E988F]">{interview.generationNotice}</p>}
           <Button size="lg" icon={ArrowRight} className="w-full" disabled={voiceBusy} onClick={() => navigate('/interviews/' + id + '/room')}>Continue to interview</Button>

@@ -1,11 +1,11 @@
 import Interview from '../models/Interview.js';
 import Answer from '../models/Answer.js';
-import { summarizeScore } from '../services/scoreSummary.js';
+import { summarizeScore, hasScoredRubric } from '../services/scoreSummary.js';
 import { ownedInterview, withInterviewLock, assertActive, finalize } from '../services/interviewState.js';
 import MonitoringEvent from '../models/MonitoringEvent.js';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/customErrors.js';
 
-const modelGraded = (a) => !a.skipped && !a.isFallbackEvaluation && a.evaluationProvider === 'local' && !['pending', 'processing'].includes(a.evaluationStatus) && typeof a.overallScore === 'number';
+const modelGraded = hasScoredRubric;
 async function practiceData(userId) {
   const completed = await Interview.find({ userId, status: { $in: ['completed', 'terminated', 'abandoned'] } }).sort({ completedAt: 1 }).lean();
   const answers = await Answer.find({ userId, interviewId: { $in: completed.map((i) => i._id) } }).populate('questionId', 'topic difficulty');
@@ -48,7 +48,7 @@ export const getPerformance = async (req, res, next) => {
       scoreTrend: scored.map((i, idx) => ({ index: idx + 1, interviewId: i._id, title: i.title, difficulty: i.difficulty, score: i.overallScore, date: new Date(i.completedAt).toLocaleDateString() })),
       topicPerformance, strongestTopics, weakestTopics,
       difficultyPerformance: ['Easy', 'Medium', 'Hard'].map((difficulty) => { const list = scored.filter((i) => i.difficulty === difficulty); return { difficulty, averageScore: list.length ? Math.round(list.reduce((n, i) => n + i.overallScore, 0) / list.length) : null, count: list.length }; }),
-      recommendation: { topic: recommended?.topic || 'Data Structures & Algorithms', difficulty: 'Medium', reason: recommended ? 'Based on available local-model practice scores. Review individual feedback before drawing conclusions.' : 'Choose a topic to practice. Guided answers are recorded without a correctness score.' },
+      recommendation: { topic: recommended?.topic || 'Data Structures & Algorithms', difficulty: 'Medium', reason: recommended ? 'Based on scored practice answers. Rule-based scores are estimates; review the evidence for each point.' : 'Choose a topic to practice. Subjective or unsupported answers remain ungraded.' },
       totalAnswersAnalyzed: graded.length,
       guidedAnswerCount: answers.filter((a) => !a.skipped && a.isFallbackEvaluation).length,
       pendingAnswerCount: answers.filter((a) => ['pending', 'processing'].includes(a.evaluationStatus)).length,

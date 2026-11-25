@@ -15,7 +15,7 @@ export const env = {
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/mockvue',
   JWT_SECRET: process.env.JWT_SECRET || 'mockvue_super_secure_jwt_secret_key_viva_2026',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
-  AI_PROVIDER: process.env.AI_PROVIDER || 'local',
+  AI_PROVIDER: process.env.AI_PROVIDER || 'rules',
   LOCAL_AI_BACKEND: process.env.LOCAL_AI_BACKEND || 'lmstudio',
   LOCAL_AI_URL: process.env.LOCAL_AI_URL || 'http://127.0.0.1:1234',
   LOCAL_AI_MODEL: process.env.LOCAL_AI_MODEL || 'mockvue-local',

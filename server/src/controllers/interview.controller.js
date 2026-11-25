@@ -4,7 +4,7 @@ import Interview from '../models/Interview.js';
 import { aiService } from '../services/ai/AIProviderFactory.js';
 import { findBankQuestion, SUPPORTED_TOPICS } from '../services/ai/QuestionCatalog.js';
 import { wakeEvaluationWorker } from '../services/evaluationQueue.js';
-import { summarizeScore } from '../services/scoreSummary.js';
+import { summarizeScore, hasScoredRubric } from '../services/scoreSummary.js';
 import { ownedInterview, withInterviewLock, isFinished, assertActive, endsAt, finalize } from '../services/interviewState.js';
 import { ValidationError, ForbiddenError, NotFoundError } from '../utils/customErrors.js';
 import mongoose from 'mongoose';
@@ -162,14 +162,31 @@ export const completeInterview = safe(async (req, res) => withInterviewLock(req.
 }));
 export const getHistory = safe(async (req, res) => {
   const interviews = await Interview.find({ userId: req.user._id }).sort({ createdAt: -1 }).select('-__v').lean();
-  const answers = await Answer.find({ userId: req.user._id }).select('interviewId overallScore skipped evaluationStatus evaluationKind isFallbackEvaluation evaluationProvider');
+  const answers = await Answer.find({ userId: req.user._id }).select('interviewId overallScore skipped evaluationStatus evaluationKind isFallbackEvaluation evaluationProvider rubricVersion');
   for (const interview of interviews) if (isFinished(interview)) {
     const own = answers.filter((a) => String(a.interviewId) === String(interview._id));
     Object.assign(interview, summarizeScore(own, interview.questions.length));
-    interview.gradedAnswerCount = own.filter((a) => !a.skipped && !a.isFallbackEvaluation && a.evaluationProvider === 'local' && typeof a.overallScore === 'number').length;
+    interview.gradedAnswerCount = own.filter(hasScoredRubric).length;
   }
   res.json({ success: true, count: interviews.length, interviews });
 });
+export const evaluateSavedAnswers = safe(async (req, res) => withInterviewLock(req.params.id, async () => {
+  const interview = await ownedInterview(req.params.id, req.user._id);
+  if (!isFinished(interview)) throw new ValidationError('Finish the interview before evaluating saved answers.');
+  const status = await aiService.status();
+  if (!status.available) throw new ValidationError('The evaluator is unavailable. Check the evaluation settings and try again.');
+  const answers = await Answer.find({ interviewId: interview._id, skipped: { $ne: true }, evaluationStatus: { $nin: ['pending', 'processing'] } });
+  const ids = answers.filter((answer) => !hasScoredRubric(answer)).map((answer) => answer._id);
+  const result = ids.length ? await Answer.updateMany({ _id: { $in: ids }, evaluationStatus: { $nin: ['pending', 'processing'] } }, { $set: {
+    evaluationStatus: 'pending', gradingStartedAt: null, gradingAttempts: 0, overallScore: null,
+    feedback: 'Answer saved. Evaluation is being prepared.',
+  } }) : { modifiedCount: 0 };
+  if (result.modifiedCount) {
+    interview.scoreStatus = 'pending'; interview.overallScore = null; await interview.save();
+    setImmediate(wakeEvaluationWorker);
+  }
+  res.status(202).json({ success: true, queued: result.modifiedCount });
+}));
 export const getReport = safe(async (req, res) => {
   const interview = await ownedInterview(req.params.id, req.user._id, true);
   if (!isFinished(interview)) throw new ForbiddenError('Finish the interview to view reference answers and the full report.');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Clock, Check, Video, VideoOff, Volume2, Square, Send, SkipForward, Maximize2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Clock, Check, Video, VideoOff, Volume2, Square, Send, SkipForward, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -9,6 +9,7 @@ import { AudioAnswer } from '../components/AudioAnswer';
 import { AnswerFeedback, feedbackPending } from '../components/AnswerFeedback';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { enterInterviewFullscreen } from '../services/fullscreen';
 
 const formatTime = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 export const InterviewRoom = () => {
@@ -19,6 +20,7 @@ export const InterviewRoom = () => {
   const [voiceBusy, setVoiceBusy] = useState(false), [draftStatus, setDraftStatus] = useState(''), [finishOpen, setFinishOpen] = useState(false);
   const [deadline, setDeadline] = useState(null), [secondsLeft, setSecondsLeft] = useState(0), [sessionComplete, setSessionComplete] = useState(false);
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement)), [cameraOn, setCameraOn] = useState(false), [cameraError, setCameraError] = useState('');
+  const [fullscreenNotice, setFullscreenNotice] = useState(''), [changingFullscreen, setChangingFullscreen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const video = useRef(null), camera = useRef(null), mounted = useRef(true), usedVoice = useRef(false), answerRef = useRef('');
   const submitting = useRef(false), finishing = useRef(false), voiceActive = useRef(false), finishRef = useRef(null), serverOffset = useRef(0), questionStarted = useRef(Date.now());
@@ -101,10 +103,18 @@ export const InterviewRoom = () => {
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, []);
   useEffect(() => {
-    if (!assessment || !started || sessionComplete) return;
     const change = () => {
       const active = Boolean(document.fullscreenElement);
       setFullscreen(active);
+      if (active) setFullscreenNotice('');
+    };
+    document.addEventListener('fullscreenchange', change);
+    return () => document.removeEventListener('fullscreenchange', change);
+  }, []);
+  useEffect(() => {
+    if (!assessment || !started || sessionComplete) return;
+    const change = () => {
+      const active = Boolean(document.fullscreenElement);
       // Permission dialogs may temporarily leave full screen. Never discard a voice answer.
       if (!active && !finishing.current && !voicePrompt.current) {
         finishRef.current?.({ terminated: true, reason: 'Interview ended because full-screen mode was exited.' });
@@ -122,6 +132,7 @@ export const InterviewRoom = () => {
   useEffect(() => () => {
     camera.current?.getTracks().forEach((track) => track.stop());
     window.speechSynthesis?.cancel();
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   }, []);
   useEffect(() => {
     if (!feedbackPending(evaluation)) return;
@@ -142,11 +153,14 @@ export const InterviewRoom = () => {
 
   const start = async () => {
     if (isStarting) return;
-    setIsStarting(true); setError('');
+    setIsStarting(true); setError(''); setFullscreenNotice('');
     try {
-      if (assessment && !document.fullscreenElement) {
-        if (!document.documentElement.requestFullscreen) throw new Error('Assessment mode needs full-screen support. Use a supported browser or create a practice interview.');
-        await document.documentElement.requestFullscreen(); setFullscreen(true);
+      try {
+        await enterInterviewFullscreen();
+        setFullscreen(Boolean(document.fullscreenElement));
+      } catch (err) {
+        if (assessment) throw err;
+        setFullscreenNotice(err.message + ' You can continue practicing in this window.');
       }
       const result = await api.post('/interviews/' + id + '/start');
       serverOffset.current = Date.parse(result.serverTime) - Date.now();
@@ -155,6 +169,16 @@ export const InterviewRoom = () => {
       questionStarted.current = Date.now();
     } catch (err) { setError(err.message || 'Could not start. Please try again.'); }
     finally { setIsStarting(false); }
+  };
+  const toggleFullscreen = async () => {
+    if (changingFullscreen || (assessment && document.fullscreenElement)) return;
+    setChangingFullscreen(true); setFullscreenNotice('');
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await enterInterviewFullscreen();
+      setFullscreen(Boolean(document.fullscreenElement));
+    } catch (err) { setFullscreenNotice(err.message || 'Could not change full screen. Please try again.'); }
+    finally { setChangingFullscreen(false); }
   };
   const submit = async (skipped = false) => {
     if (submitting.current || evaluation || (!skipped && !answerRef.current.trim())) return null;
@@ -180,7 +204,7 @@ export const InterviewRoom = () => {
       }
       await api.post('/interviews/' + id + '/complete', { terminated, reason }, { timeout: 135000 });
       setSessionComplete(true); window.speechSynthesis?.cancel();
-      if (assessment && document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
       navigate('/interviews/' + id + '/results', { replace: true });
     } catch (err) {
       setError(err.message || 'Could not finish the interview. Your draft is saved. Please retry.');
@@ -226,22 +250,24 @@ export const InterviewRoom = () => {
             <span className="text-xs text-[#68645E] dark:text-[#9E988F]">{interview.isFallbackAI ? 'Question bank' : interview.questionProvider === 'local' ? 'Local AI questions' : 'AI questions'}</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div role="timer" aria-label="Time remaining" className={'flex items-center gap-2 rounded-xl border px-4 py-2.5 font-mono text-lg ' + (started && secondsLeft < 120 ? 'border-[#E8C4C4] text-[#A33B3B]' : 'border-[#DED9D0] dark:border-[#332F2A]')}>
             <Clock className="w-4 h-4" />{started ? formatTime(secondsLeft) : interview.durationMinutes + ':00'}
           </div>
+          {started && <Button variant="outline" icon={fullscreen && !assessment ? Minimize2 : Maximize2} onClick={toggleFullscreen} isLoading={changingFullscreen} disabled={locked || (assessment && fullscreen)} title={assessment && fullscreen ? 'Full screen is required during an assessment.' : undefined}>{fullscreen ? assessment ? 'Full screen active' : 'Exit full screen' : 'Enter full screen'}</Button>}
           {started && <button type="button" className="lg:hidden p-2 rounded-lg border border-[#DED9D0] dark:border-[#332F2A]" aria-label={cameraOn ? 'Turn off camera preview' : 'Turn on camera preview'} onClick={toggleCamera}>{cameraOn ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}</button>}
           {started && <Button variant="outline" onClick={() => setFinishOpen(true)} disabled={locked} isLoading={isFinishing}>Finish</Button>}
         </div>
       </div>
       {error && <div role="alert" className="mv-alert"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span></div>}
+      {fullscreenNotice && <p role="status" className="text-sm text-[#68645E] dark:text-[#9E988F]">{fullscreenNotice}</p>}
       {needsStart ? (
         <Card className="max-w-2xl mx-auto !p-8 sm:!p-10 text-center space-y-5 my-12">
           <span className="inline-flex rounded-full bg-[#F0ECE4] dark:bg-[#24201C] p-4"><MicIcon /></span>
           <h2 className="font-serif text-3xl font-bold">{started ? 'Return to your interview' : 'Ready when you are'}</h2>
           <p className="text-sm leading-relaxed text-[#68645E] dark:text-[#9E988F]">{questions.length} questions · {interview.durationMinutes} minutes. Type your answers or record them. You can review each transcript before submitting.</p>
-          <p className="text-xs text-[#68645E] dark:text-[#9E988F]">{assessment ? 'Stay in this tab in full-screen mode. Leaving ends this assessment.' : 'Camera and full screen are optional. Your drafts save on this device.'}</p>
-          <Button size="lg" icon={assessment ? Maximize2 : ArrowRight} onClick={start} isLoading={isStarting}>{started ? 'Resume interview' : 'Start interview'}</Button>
+          <p className="text-xs text-[#68645E] dark:text-[#9E988F]">{assessment ? 'Stay in this tab in full-screen mode. Leaving ends this assessment.' : 'Starts in full screen. You can exit full screen or switch tabs without ending practice. Camera is optional.'}</p>
+          <Button size="lg" icon={Maximize2} onClick={start} isLoading={isStarting}>{started ? 'Resume interview' : 'Start interview'}</Button>
           <p className="text-xs text-[#68645E] dark:text-[#9E988F]">{started ? 'Your original time limit still applies.' : 'The timer starts only when you begin.'}</p>
         </Card>
       ) : (
