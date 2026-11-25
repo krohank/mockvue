@@ -10,6 +10,7 @@ import { AnswerFeedback, feedbackPending } from '../components/AnswerFeedback';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { enterInterviewFullscreen } from '../services/fullscreen';
+import { watchFocus } from '../services/focusGuard';
 import { startCamera, stopCamera, attachStream, onCameraLost, cameraPermission, rememberCamera, cameraWasOn } from '../services/camera';
 
 const formatTime = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
@@ -25,7 +26,7 @@ export const InterviewRoom = () => {
   const [speaking, setSpeaking] = useState(false);
   const video = useRef(null), camera = useRef(null), mounted = useRef(true), usedVoice = useRef(false), answerRef = useRef('');
   const submitting = useRef(false), finishing = useRef(false), voiceActive = useRef(false), finishRef = useRef(null), serverOffset = useRef(0), questionStarted = useRef(Date.now());
-  const voicePrompt = useRef(false), draftReliable = useRef(true), autoAttempted = useRef(false), cameraLost = useRef(null);
+  const voicePrompt = useRef(false), draftReliable = useRef(true), autoAttempted = useRef(false), cameraLost = useRef(null), terminating = useRef(false);
   const questions = interview?.questions || [], currentQuestion = questions[currentIndex];
   const started = interview?.status === 'in_progress';
   const assessment = interview?.mode === 'assessment';
@@ -112,23 +113,31 @@ export const InterviewRoom = () => {
     document.addEventListener('fullscreenchange', change);
     return () => document.removeEventListener('fullscreenchange', change);
   }, []);
+  // Record the violation, then end the assessment. Only one violation is handled, even when
+  // leaving full screen, losing focus and hiding the tab all fire together.
+  const terminate = async (eventType, reason) => {
+    if (finishing.current || terminating.current) return;
+    terminating.current = true;
+    try {
+      await api.post('/interviews/' + id + '/monitoring', { eventType, description: reason }, { timeout: 4000 }).catch(() => {});
+      await finishRef.current?.({ terminated: true, reason });
+    } finally { terminating.current = false; }
+  };
   useEffect(() => {
     if (!assessment || !started || sessionComplete) return;
     const change = () => {
-      const active = Boolean(document.fullscreenElement);
       // Permission dialogs may temporarily leave full screen. Never discard a voice answer.
-      if (!active && !finishing.current && !voicePrompt.current) {
-        finishRef.current?.({ terminated: true, reason: 'Interview ended because full-screen mode was exited.' });
-      }
+      if (!document.fullscreenElement && !voicePrompt.current) terminate('fullscreen_exit', 'Interview ended because full-screen mode was exited.');
     };
-    const visibility = () => {
-      if (document.visibilityState === 'hidden' && !finishing.current && !voicePrompt.current) {
-        finishRef.current?.({ terminated: true, reason: 'Interview ended because you left the interview tab.' });
-      }
-    };
+    // Covers a hidden tab and also Alt+Tab or clicking another window, which only removes focus.
+    const stopWatching = watchFocus({
+      isPaused: () => voicePrompt.current,
+      onViolation: (kind) => kind === 'hidden'
+        ? terminate('tab_switched', 'Interview ended because you left the interview tab.')
+        : terminate('window_blurred', 'Interview ended because you switched to another window or app.'),
+    });
     document.addEventListener('fullscreenchange', change);
-    document.addEventListener('visibilitychange', visibility);
-    return () => { document.removeEventListener('fullscreenchange', change); document.removeEventListener('visibilitychange', visibility); };
+    return () => { document.removeEventListener('fullscreenchange', change); stopWatching(); };
   }, [assessment, started, sessionComplete]);
   useEffect(() => () => {
     cameraLost.current?.(); stopCamera(camera.current);
@@ -209,7 +218,8 @@ export const InterviewRoom = () => {
     finally { submitting.current = false; setIsSubmitting(false); }
   };
   const finish = async ({ automatic = false, terminated = false, reason = null } = {}) => {
-    if (finishing.current || submitting.current) return;
+    // A violation must end the assessment even while an answer is being saved.
+    if (finishing.current || (submitting.current && !terminated)) return;
     finishing.current = true; setIsFinishing(true); setFinishOpen(false); setError('');
     try {
       if (!terminated && answerRef.current.trim() && !evaluation && !voiceActive.current && (!deadline || Date.now() + serverOffset.current < deadline + (assessment ? 2000 : 120000))) {
