@@ -13,7 +13,7 @@ const scoreExample = [
 const steps = [
   { title: 'Set up your interview', description: 'Choose a role, topics, difficulty, and time limit.' },
   { title: 'Answer the questions', description: 'Type, record or upload your answer. Review the transcript before submitting.' },
-  { title: 'Review your results', description: 'Compare your answers with worked solutions. Get model feedback when a local model is running.' },
+  { title: 'Review your results', description: 'Compare your answers with worked solutions. A local rubric checker scores every answer against the saved answer; no AI model or API key is needed.' },
 ];
 const topics = ['Data structures & algorithms', 'Databases', 'Operating systems', 'Computer networks', 'System design', 'Web development'];
 
@@ -49,7 +49,7 @@ export const LandingPage = () => {
           <aside id="feedback" aria-labelledby="example-heading" className="lg:col-span-5 scroll-mt-24 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] bg-[#FFFDF9] dark:bg-[#1C1916] shadow-paper">
             <div className="p-5 sm:p-6 border-b border-[#DED9D0] dark:border-[#332F2A]">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#68645E] dark:text-[#9E988F]">
-                <h2 id="example-heading" className="font-medium">Example model feedback</h2>
+                <h2 id="example-heading" className="font-medium">Example score breakdown</h2>
                 <span>Databases · Medium</span>
               </div>
               <p className="mt-4 text-xl font-serif font-semibold leading-snug">
@@ -63,7 +63,7 @@ export const LandingPage = () => {
                   88 <span className="text-base font-normal text-[#68645E] dark:text-[#9E988F]">/ 100</span>
                 </span>
               </div>
-              <p className="text-xs leading-relaxed mb-5 text-[#68645E] dark:text-[#9E988F]">Illustrative model score. Guided practice uses worked answers and checklists without correctness scores.</p>
+              <p className="text-xs leading-relaxed mb-5 text-[#68645E] dark:text-[#9E988F]">Illustrative score. Real scores compare your wording with each question’s saved answer and show which key points you covered.</p>
               <dl className="space-y-4">
                 {scoreExample.map(({ label, score, max }) => (
                   <div key={label}>

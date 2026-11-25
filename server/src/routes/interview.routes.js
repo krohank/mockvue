@@ -8,6 +8,7 @@ import {
   completeInterview,
   getHistory,
   getReport,
+  evaluateSavedAnswers,
 } from '../controllers/interview.controller.js';
 import {
   logMonitoringEvent,
@@ -27,6 +28,7 @@ router.post('/:id/answer', submitAnswer);
 router.put('/:id/draft', saveDraft);
 router.post('/:id/complete', completeInterview);
 router.get('/:id/report', getReport);
+router.post('/:id/evaluate', evaluateSavedAnswers);
 
 // Direct interview monitoring endpoints (prevents 404 broken routes)
 router.post('/:id/monitoring', logMonitoringEvent);

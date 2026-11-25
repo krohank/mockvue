@@ -368,7 +368,7 @@ export const CreateInterviewPage = () => {
               <legend className="text-sm font-semibold mb-2">Interview mode</legend>
               <label className="flex items-start gap-3 p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] cursor-pointer">
                 <input type="radio" name="mode" value="practice" checked={mode === 'practice'} onChange={() => setMode('practice')} className="mt-1 text-[#7A263A]" />
-                <span><strong className="block text-sm">Practice</strong><span className="text-xs text-[#68645E] dark:text-[#9E988F]">Camera and full screen are optional. Switch tabs without losing your session.</span></span>
+                <span><strong className="block text-sm">Practice</strong><span className="text-xs text-[#68645E] dark:text-[#9E988F]">Starts in full screen. Exit full screen or switch tabs without ending your session. Camera is optional.</span></span>
               </label>
               <label className="flex items-start gap-3 p-4 rounded-xl border border-[#DED9D0] dark:border-[#332F2A] cursor-pointer">
                 <input type="radio" name="mode" value="assessment" checked={mode === 'assessment'} onChange={() => setMode('assessment')} className="mt-1 text-[#7A263A]" />

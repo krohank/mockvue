@@ -2,6 +2,7 @@ import Answer from '../models/Answer.js';
 import Question from '../models/Question.js';
 import Interview from '../models/Interview.js';
 import { aiService } from './ai/AIProviderFactory.js';
+import { env } from '../config/env.js';
 import { FallbackProvider } from './ai/FallbackProvider.js';
 import { normalizeEvaluation } from './ai/evaluation.js';
 import { finalize, isFinished, withInterviewLock } from './interviewState.js';
@@ -33,6 +34,22 @@ async function drain() {
       if (interview && isFinished(interview)) await finalize(interview);
     });
   }
+}
+// Answers saved while no scorer was running (an unavailable model, or the old
+// checklist-only mode) are re-scored by the local rubric checker at startup, so a
+// session finished earlier gets its score without being repeated. Scores that a
+// language model already produced are left alone.
+export async function requeueUngradedAnswers() {
+  if (env.AI_PROVIDER !== 'rules') return 0;
+  const result = await Answer.updateMany({
+    skipped: { $ne: true }, evaluationStatus: 'completed', responseText: { $nin: ['', '[Skipped]'] },
+    $and: [
+      { $or: [{ evaluationProvider: { $ne: 'rules' } }, { evaluationKind: { $ne: 'rule-based' } }, { rubricVersion: null }] },
+      { $nor: [{ evaluationProvider: 'local', overallScore: { $ne: null } }] },
+    ],
+  }, { $set: { evaluationStatus: 'pending', gradingStartedAt: null, gradingAttempts: 0, overallScore: null,
+    feedback: 'Answer saved. It is being scored with the local rubric checker.' } });
+  return result.modifiedCount;
 }
 export function wakeEvaluationWorker() {
   if (stopping || running) return running;

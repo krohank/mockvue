@@ -42,3 +42,6 @@ Thumbs.db
 # Local development data and speech models
 .local-data/
 __pycache__/
+
+# Generated report copies
+Claude outputs/

@@ -40,25 +40,59 @@ Unsubmitted device drafts are recoverable in the report without changing scores.
 
 ## Interview modes
 
-- Practice: camera preview and full screen are optional. Tab changes do not end
-  the session. The timer starts when Start interview is clicked.
+- Practice: Start interview opens full screen. Use the full-screen control or Esc
+  to leave or re-enter it without ending practice. Camera preview is optional,
+  and tab changes do not end the session. If the browser blocks full screen,
+  practice can continue in the current window with a message explaining how to retry.
+  The timer starts when Start interview is clicked.
 - Assessment: full screen is required; leaving full screen or switching tabs
   ends the session. Browser permission dialogs are exempted. Camera previews
   are never scored, and no skin-tone or gaze heuristics are used.
 
 The server owns start times, deadlines, answer order, and completion. Submitted
 answers are immutable; request retries return the saved answer. Unanswered and
-skipped questions contribute zero to a fully model-graded interview score. A session containing guided, ungraded answers has no overall correctness score. Practice
+skipped questions contribute zero to the interview score, which is the average of the per-question rubric scores. A session with any unscored answer has no overall score. Practice
 allows up to two minutes for an in-flight transcript or request to finish after
 the timer reaches zero; assessment has a two-second network grace period.
 
-## AI feedback without API keys
+## Answer scoring without any language model
 
-MockVue uses local models or its built-in question bank. There are no hosted
-LLM adapters, provider keys, accounts, quotas, or per-request API charges.
-Speech also runs locally. Hardware, electricity, internet downloads and any
-optional hosting still have their normal costs.
+The default (`AI_PROVIDER=rules`) scores every answer with a local rubric
+checker. There is no LLM, no network call and no API key. Each of the 139
+questions already has a saved answer and reference concepts; the checker turns
+them into a rubric:
 
+- one point per reference concept, and one per sentence of the saved answer;
+- your answer is compared with those points using stemmed key terms, a small
+  synonym table (for example "rolls back" = rollback, "all or nothing" =
+  atomicity) and weights that favour distinctive terms over common words;
+- known false claims for a question (for example "two pointers do not need a
+  sorted array") are flagged and cost marks, using the matching sentence as
+  evidence;
+- a bare list of terms earns little, because an explanation needs connecting
+  words and full sentences;
+- HR and Behavioral answers are scored on story structure (situation, goal,
+  your actions, result, reflection), concrete detail and relevance. The checker
+  cannot verify that a story is true.
+
+Criteria are Accuracy / evidence (40), Relevance (20), Completeness (20) and
+Clarity (20). The report lists every rubric point as covered, partly covered or
+not found, with the sentence of your answer used as evidence. Answers saved
+earlier without a score are re-scored when the server starts.
+
+Limits: this measures overlap with the saved answer, not correctness. A correct
+answer in very different vocabulary can be under-scored, and a fluent wrong
+statement the rules do not know about can be missed. Treat scores as practice
+estimates and compare with the saved answer. Run `npm run test:rubric` in
+`server/` for the calibration checks (saved answer restated, unrelated text,
+keyword lists, wrong claims, cross-question answers).
+
+Speech also runs locally. Hardware, electricity and internet downloads still
+have their normal costs.
+
+## Optional: local language model
+
+The rest of this section is only for `AI_PROVIDER=local`, which is not needed.
 For local model feedback, install [LM Studio 0.4 or later](https://lmstudio.ai/) and download
 a model that fits your machine. If a model is already downloaded, reuse it.
 Load it under the `mockvue-local` identifier, then start the loopback server:
@@ -73,7 +107,7 @@ Free sufficient RAM and GPU memory before loading. Model names are listed by
 The model file and LM Studio runtime must both be installed for offline use.
 MockVue never downloads or loads a model automatically during an interview.
 
-The default server settings are:
+Optional local-model settings:
 
     AI_PROVIDER=local
     LOCAL_AI_BACKEND=lmstudio

@@ -27,6 +27,15 @@ Core question and answer logic was revised on 24 November 2026:
 - Reference answers remain private until submission/session completion. Completed
   reports include study answers for skipped and unanswered questions too.
 
+Update 25 November 2026: answer scoring no longer depends on a language model.
+`AI_PROVIDER=rules` is the default. A local rubric checker (server/src/services/ai/
+LocalRubricGrader.js) turns each question's saved answer and reference concepts
+into a rubric and scores every answer, including HR and Behavioral ones. The
+results page, history and analytics now count these scores (the client previously
+recognised only model-graded answers), and answers saved without a score are
+re-scored at server start. Two questions whose hand-written rubric crashed the
+old rule grader are scored. Calibration: server/tests/localRubric.test.js.
+
 The existing 9B model was briefly loaded, but multiple load attempts failed to
 allocate cache memory and no live grading response completed. A native load with
 an explicit smaller context also failed. Live calibration remains unverified.
