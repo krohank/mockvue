@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { AudioAnswer } from '../components/AudioAnswer';
 import api from '../services/api';
+import { startCamera, stopCamera, attachStream, onCameraLost, rememberCamera } from '../services/camera';
 
 export const InterviewPrepPage = () => {
   const { id } = useParams(), navigate = useNavigate();
@@ -26,17 +27,18 @@ export const InterviewPrepPage = () => {
       setInterview(res.interview);
     }).catch((err) => { if (err.code !== 'ERR_CANCELED' && mounted.current) setError(err.message); })
       .finally(() => { if (mounted.current) setLoading(false); });
-    return () => { mounted.current = false; controller.abort(); stream.current?.getTracks().forEach((track) => track.stop()); };
+    return () => { mounted.current = false; controller.abort(); stopCamera(stream.current); };
   }, [id, navigate]);
-  useEffect(() => { if (video.current && stream.current) video.current.srcObject = stream.current; }, [cameraOn]);
+  useEffect(() => { attachStream(video.current, stream.current); }, [cameraOn]);
   const cameraTest = async () => {
-    if (cameraOn) { stream.current?.getTracks().forEach((track) => track.stop()); stream.current = null; setCameraOn(false); return; }
+    if (cameraOn) { stopCamera(stream.current); stream.current = null; setCameraOn(false); rememberCamera(false); return; }
     setCameraError('');
     try {
-      const media = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      if (!mounted.current) { media.getTracks().forEach((track) => track.stop()); return; }
-      stream.current = media; setCameraOn(true);
-    } catch { setCameraError('Camera unavailable. You can still practice and record voice answers.'); }
+      const media = await startCamera();
+      if (!mounted.current) { stopCamera(media); return; }
+      stream.current = media; setCameraOn(true); rememberCamera(true);
+      onCameraLost(media, () => { stream.current = null; setCameraOn(false); rememberCamera(false); setCameraError('The camera stopped. It may have been unplugged or taken by another app.'); });
+    } catch (err) { setCameraError(err.message + ' You can still practice and record voice answers.'); }
   };
   if (loading) return <div className="min-h-[70vh] flex items-center justify-center"><Spinner label="Loading setup…" /></div>;
   if (!interview) return <div className="max-w-xl mx-auto py-20 px-5 space-y-4"><h1 className="text-3xl font-serif font-bold">Interview unavailable</h1><p role="alert">{error}</p><Link to="/dashboard"><Button>Back to dashboard</Button></Link></div>;

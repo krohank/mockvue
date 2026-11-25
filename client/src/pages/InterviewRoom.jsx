@@ -10,6 +10,7 @@ import { AnswerFeedback, feedbackPending } from '../components/AnswerFeedback';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { enterInterviewFullscreen } from '../services/fullscreen';
+import { startCamera, stopCamera, attachStream, onCameraLost, cameraPermission, rememberCamera, cameraWasOn } from '../services/camera';
 
 const formatTime = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 export const InterviewRoom = () => {
@@ -24,7 +25,7 @@ export const InterviewRoom = () => {
   const [speaking, setSpeaking] = useState(false);
   const video = useRef(null), camera = useRef(null), mounted = useRef(true), usedVoice = useRef(false), answerRef = useRef('');
   const submitting = useRef(false), finishing = useRef(false), voiceActive = useRef(false), finishRef = useRef(null), serverOffset = useRef(0), questionStarted = useRef(Date.now());
-  const voicePrompt = useRef(false), draftReliable = useRef(true), autoAttempted = useRef(false);
+  const voicePrompt = useRef(false), draftReliable = useRef(true), autoAttempted = useRef(false), cameraLost = useRef(null);
   const questions = interview?.questions || [], currentQuestion = questions[currentIndex];
   const started = interview?.status === 'in_progress';
   const assessment = interview?.mode === 'assessment';
@@ -130,7 +131,7 @@ export const InterviewRoom = () => {
     return () => { document.removeEventListener('fullscreenchange', change); document.removeEventListener('visibilitychange', visibility); };
   }, [assessment, started, sessionComplete]);
   useEffect(() => () => {
-    camera.current?.getTracks().forEach((track) => track.stop());
+    cameraLost.current?.(); stopCamera(camera.current);
     window.speechSynthesis?.cancel();
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   }, []);
@@ -149,7 +150,19 @@ export const InterviewRoom = () => {
     timer = setTimeout(poll, delay);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [id, evaluation?._id, evaluation?.evaluationStatus]);
-  useEffect(() => { if (video.current && camera.current) video.current.srcObject = camera.current; }, [cameraOn]);
+  useEffect(() => { attachStream(video.current, camera.current); }, [cameraOn]);
+  // Resume the preview the student turned on during setup. Only when permission is already
+  // granted, so no camera prompt can appear in the middle of an interview.
+  useEffect(() => {
+    if (!started || camera.current || !cameraWasOn()) return;
+    let cancelled = false;
+    (async () => {
+      if (await cameraPermission() !== 'granted' || cancelled) return;
+      voicePrompt.current = true;
+      try { await startPreview(); } catch (err) { if (!cancelled) setCameraError(err.message); } finally { voicePrompt.current = false; }
+    })();
+    return () => { cancelled = true; };
+  }, [started]);
 
   const start = async () => {
     if (isStarting) return;
@@ -216,14 +229,21 @@ export const InterviewRoom = () => {
     if (sessionComplete) { finishing.current = true; navigate('/interviews/' + id + '/results'); return; }
     setEvaluation(null); setCurrentIndex((index) => index + 1);
   };
+  const stopPreview = () => { cameraLost.current?.(); cameraLost.current = null; stopCamera(camera.current); camera.current = null; setCameraOn(false); };
+  async function startPreview() {
+    const stream = await startCamera();
+    if (!mounted.current) { stopCamera(stream); return; }
+    camera.current = stream;
+    cameraLost.current = onCameraLost(stream, () => {
+      camera.current = null; cameraLost.current = null; setCameraOn(false); rememberCamera(false);
+      setCameraError('The camera stopped. It may have been unplugged or taken by another app. Turn the preview on to retry.');
+    });
+    setCameraOn(true); rememberCamera(true);
+  }
   const toggleCamera = async () => {
-    if (cameraOn) { camera.current?.getTracks().forEach((track) => track.stop()); camera.current = null; setCameraOn(false); return; }
+    if (cameraOn) { rememberCamera(false); stopPreview(); return; }
     setCameraError(''); voicePrompt.current = true;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-      if (!mounted.current) { stream.getTracks().forEach((track) => track.stop()); return; }
-      camera.current = stream; setCameraOn(true);
-    } catch { setCameraError('Camera unavailable. You can continue without a preview.'); } finally { voicePrompt.current = false; }
+    try { await startPreview(); } catch (err) { setCameraError(err.message + ' You can continue without a preview.'); } finally { voicePrompt.current = false; }
   };
   const readQuestion = () => {
     if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
@@ -289,7 +309,7 @@ export const InterviewRoom = () => {
             </Card>
           </aside>
           <div className="space-y-5 min-w-0">
-            {cameraOn && <video ref={(node) => { if (node && node.srcObject !== camera.current) node.srcObject = camera.current; }} autoPlay muted playsInline className="lg:hidden aspect-video max-w-sm w-full rounded-xl object-cover bg-[#24201C]" />}
+            {cameraOn && <video ref={(node) => { if (node && node.srcObject !== camera.current) attachStream(node, camera.current); }} autoPlay muted playsInline className="lg:hidden aspect-video max-w-sm w-full rounded-xl object-cover bg-[#24201C]" />}
             {cameraError && <p role="alert" className="lg:hidden text-xs text-[#A33B3B]">{cameraError}</p>}
             <Card className="!p-6 sm:!p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
